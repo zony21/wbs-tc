@@ -249,15 +249,17 @@ function enhanceReviewCards() {
       badges.prepend(badge)
     }
 
-    const header = card.querySelector<HTMLElement>('.report-card-header')
-    if (!header || header.querySelector('.daily-report-edit-button')) return
+    const actionCell = card.querySelector<HTMLElement>('.report-action-cell')
+    const fallbackHeader = card.querySelector<HTMLElement>('.report-card-header')
+    const target = actionCell || fallbackHeader
+    if (!target || target.querySelector('.daily-report-edit-button')) return
 
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'daily-report-edit-button'
     button.textContent = '修正'
     button.addEventListener('click', () => void loadReportIntoForm(date))
-    header.append(button)
+    target.append(button)
   })
 }
 
