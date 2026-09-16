@@ -195,7 +195,7 @@ function buildWeeklyReport(state: AppState) {
     `${formatJapaneseDate(weekStart, true)}週の残業時間および実績、今週の予定についてご報告いたします。`,
     "",
     `${formatJapaneseDate(weekStart, true)}週の残業時間：${numberLabel(overtime)}時間`,
-    "${formatJapaneseDate(weekStart, true)}週の主な実績：",
+    `${formatJapaneseDate(weekStart, true)}週の主な実績：`,
     ...achievements,
     "",
     "今週の主な予定：",
