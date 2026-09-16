@@ -19,6 +19,11 @@ function readStorage() {
   return localStorage.getItem(STORAGE_KEY) || ''
 }
 
+function successFlashVisible() {
+  const text = document.querySelector<HTMLElement>('.flash')?.textContent?.trim() || ''
+  return /(追加|登録|更新)しました/.test(text)
+}
+
 function classifyButton(button: HTMLButtonElement): SuccessState | null {
   const text = button.textContent?.trim() || ''
 
@@ -87,8 +92,8 @@ function handleClick(event: MouseEvent) {
   if (pendingTimer) window.clearTimeout(pendingTimer)
   pendingTimer = window.setTimeout(() => {
     const after = readStorage()
-    if (after !== before) success.value = candidate
-  }, 160)
+    if (after !== before || successFlashVisible()) success.value = candidate
+  }, 120)
 }
 
 function restorePendingSuccess() {
@@ -125,12 +130,12 @@ function returnToList() {
 }
 
 onMounted(() => {
-  document.addEventListener('click', handleClick, true)
+  document.addEventListener('click', handleClick)
   restorePendingSuccess()
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClick, true)
+  document.removeEventListener('click', handleClick)
   if (pendingTimer) window.clearTimeout(pendingTimer)
   if (pendingSessionTimer) window.clearTimeout(pendingSessionTimer)
 })
@@ -140,7 +145,7 @@ onBeforeUnmount(() => {
   <div v-if="success" class="registration-success-backdrop">
     <section class="registration-success-dialog" role="dialog" aria-modal="true" aria-labelledby="registration-success-title">
       <div class="registration-success-icon">✓</div>
-      <h2 id="registration-success-title">登録完了</h2>
+      <h2 id="registration-success-title">保存しました</h2>
       <p>{{ success.message }}</p>
       <button type="button" @click="returnToList">一覧へ戻る</button>
     </section>
