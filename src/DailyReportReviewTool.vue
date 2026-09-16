@@ -236,91 +236,102 @@ onBeforeUnmount(() => {
 
       <div class="schedule-scroll">
         <div class="monthly-schedule">
-          <div class="schedule-header schedule-grid">
-            <div>日</div>
-            <div>曜日</div>
-            <div>状態</div>
-            <div>勤務区分</div>
-            <div>勤務時間</div>
-            <div>実労働</div>
-            <div>残業</div>
-            <div>作業内容</div>
-            <div>操作</div>
-          </div>
-
-          <section
-            v-for="day in scheduleDays"
-            :key="day.key"
-            :class="[
-              'schedule-row',
-              'schedule-grid',
-              { saturday: day.weekdayIndex === 6, sunday: day.weekdayIndex === 0, today: day.isToday },
-            ]"
-          >
-            <div class="date-cell">
-              <strong>{{ day.day }}</strong>
-              <small v-if="day.isToday">今日</small>
-            </div>
-            <div class="weekday-cell">{{ day.weekdayLabel }}</div>
-
-            <article v-if="day.report" class="daily-report-card schedule-report">
-              <header class="report-card-header">
-                <div class="compat-date" aria-hidden="true">
+          <table class="daily-schedule-table">
+            <colgroup>
+              <col class="col-day">
+              <col class="col-weekday">
+              <col class="col-state">
+              <col class="col-work-type">
+              <col class="col-work-time">
+              <col class="col-actual">
+              <col class="col-overtime">
+              <col class="col-task">
+              <col class="col-action">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>日</th>
+                <th>曜日</th>
+                <th>状態</th>
+                <th>勤務区分</th>
+                <th>勤務時間</th>
+                <th>実労働</th>
+                <th>残業</th>
+                <th>作業内容</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="day in scheduleDays"
+                :key="day.key"
+                :class="[
+                  'schedule-row',
+                  { 'daily-report-card': day.report, saturday: day.weekdayIndex === 6, sunday: day.weekdayIndex === 0, today: day.isToday },
+                ]"
+              >
+                <td class="date-cell">
                   <strong>{{ day.day }}</strong>
-                  <span>{{ day.report.date }}</span>
-                </div>
-                <div class="report-badges">
-                  <span
-                    :class="[
-                      'daily-report-state-badge',
-                      day.report.id.startsWith('DRAFT-') ? 'is-draft' : 'is-submitted',
-                    ]"
-                  >
-                    {{ day.report.id.startsWith('DRAFT-') ? '仮保存' : '登録済み' }}
-                  </span>
-                </div>
-              </header>
+                  <small v-if="day.isToday">今日</small>
+                </td>
+                <td class="weekday-cell">{{ day.weekdayLabel }}</td>
 
-              <div class="work-type-cell">{{ workTypeLabels[day.report.workType] }}</div>
-              <div class="work-time-cell">{{ day.report.startTime }} ～ {{ day.report.endTime }}</div>
-              <div class="actual-cell">{{ numberLabel(reportWorkHours(day.report)) }}h</div>
-              <div :class="['overtime-cell', { active: day.report.overtimeHours > 0 }]">
-                {{ numberLabel(day.report.overtimeHours) }}h
-              </div>
-
-              <details class="task-details">
-                <summary :title="taskTooltip(day.report)">
-                  <span>{{ taskSummary(day.report) }}</span>
-                  <strong>{{ day.report.entries.length }}件</strong>
-                </summary>
-                <div class="task-detail-panel">
-                  <div v-if="day.report.entries.length" class="task-list">
-                    <div v-for="entry in day.report.entries" :key="entry.rowId">
-                      <span :title="taskName(entry.taskId)">{{ taskName(entry.taskId) }}</span>
-                      <strong>{{ numberLabel(entry.hours) }}h</strong>
+                <template v-if="day.report">
+                  <td class="report-badges state-cell">
+                    <div class="report-card-header compat-header" aria-hidden="true">
+                      <div><span>{{ day.report.date }}</span></div>
                     </div>
-                  </div>
-                  <p v-else class="empty-small">作業実績はありません。</p>
-                  <div v-if="day.report.remarks" class="report-remarks">
-                    <strong>備考</strong>
-                    <p>{{ day.report.remarks }}</p>
-                  </div>
-                </div>
-              </details>
+                    <span
+                      :class="[
+                        'daily-report-state-badge',
+                        day.report.id.startsWith('DRAFT-') ? 'is-draft' : 'is-submitted',
+                      ]"
+                    >
+                      {{ day.report.id.startsWith('DRAFT-') ? '仮保存' : '登録済み' }}
+                    </span>
+                  </td>
+                  <td class="work-type-cell">{{ workTypeLabels[day.report.workType] }}</td>
+                  <td class="work-time-cell">{{ day.report.startTime }} ～ {{ day.report.endTime }}</td>
+                  <td class="actual-cell">{{ numberLabel(reportWorkHours(day.report)) }}h</td>
+                  <td :class="['overtime-cell', { active: day.report.overtimeHours > 0 }]">
+                    {{ numberLabel(day.report.overtimeHours) }}h
+                  </td>
+                  <td class="task-cell">
+                    <details class="task-details">
+                      <summary :title="taskTooltip(day.report)">
+                        <span>{{ taskSummary(day.report) }}</span>
+                        <strong>{{ day.report.entries.length }}件</strong>
+                      </summary>
+                      <div class="task-detail-panel">
+                        <div v-if="day.report.entries.length" class="task-list">
+                          <div v-for="entry in day.report.entries" :key="entry.rowId">
+                            <span :title="taskName(entry.taskId)">{{ taskName(entry.taskId) }}</span>
+                            <strong>{{ numberLabel(entry.hours) }}h</strong>
+                          </div>
+                        </div>
+                        <p v-else class="empty-small">作業実績はありません。</p>
+                        <div v-if="day.report.remarks" class="report-remarks">
+                          <strong>備考</strong>
+                          <p>{{ day.report.remarks }}</p>
+                        </div>
+                      </div>
+                    </details>
+                  </td>
+                  <td class="report-action-cell"></td>
+                </template>
 
-              <div class="report-action-cell"></div>
-            </article>
-
-            <template v-else>
-              <div class="empty-status">未登録</div>
-              <div class="empty-cell">－</div>
-              <div class="empty-cell">－</div>
-              <div class="empty-cell">－</div>
-              <div class="empty-cell">－</div>
-              <div class="empty-task">－</div>
-              <div class="empty-cell operation-empty">－</div>
-            </template>
-          </section>
+                <template v-else>
+                  <td class="empty-status">未登録</td>
+                  <td class="empty-cell">－</td>
+                  <td class="empty-cell">－</td>
+                  <td class="empty-cell">－</td>
+                  <td class="empty-cell">－</td>
+                  <td class="empty-task">－</td>
+                  <td class="empty-cell operation-empty">－</td>
+                </template>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </template>
@@ -432,113 +443,88 @@ onBeforeUnmount(() => {
   background: #fff;
   box-shadow: 0 4px 18px rgba(31, 64, 83, .06);
 }
-.schedule-grid {
-  display: grid;
-  grid-template-columns: 56px 58px 96px 112px 138px 90px 82px minmax(300px, 1fr) 76px;
+.daily-schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: #fff;
 }
-.schedule-header {
+.col-day { width: 56px; }
+.col-weekday { width: 58px; }
+.col-state { width: 96px; }
+.col-work-type { width: 112px; }
+.col-work-time { width: 138px; }
+.col-actual { width: 90px; }
+.col-overtime { width: 82px; }
+.col-task { width: auto; }
+.col-action { width: 76px; }
+.daily-schedule-table th,
+.daily-schedule-table td {
+  box-sizing: border-box;
+  border-right: 1px solid #e7edf2;
+  border-bottom: 1px solid #edf1f4;
+  vertical-align: middle;
+}
+.daily-schedule-table th:last-child,
+.daily-schedule-table td:last-child { border-right: 0; }
+.daily-schedule-table thead th {
+  height: 40px;
+  padding: 7px 8px;
   background: #f7f9fb;
   color: #5b7083;
+  text-align: center;
   font-size: 11px;
   font-weight: 800;
+}
+.daily-schedule-table tbody tr:last-child td { border-bottom: 0; }
+.schedule-row { height: 48px; transition: background .15s ease; }
+.schedule-row:hover > td { background-color: #fbfdfe; }
+.schedule-row td {
+  height: 48px;
+  padding: 7px 8px;
+  color: #405970;
   text-align: center;
-}
-.schedule-header > div {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  padding: 7px 8px;
-  border-right: 1px solid #e1e8ee;
-}
-.schedule-header > div:last-child { border-right: 0; }
-.schedule-row {
-  min-height: 48px;
-  background: #fff;
-  border-top: 1px solid #edf1f4;
-  transition: background .15s ease;
-}
-.schedule-row:hover { background: #fbfdfe; }
-.schedule-row > .date-cell,
-.schedule-row > .weekday-cell,
-.schedule-row > .empty-status,
-.schedule-row > .empty-cell,
-.schedule-row > .empty-task {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: 48px;
-  padding: 7px 8px;
-  border-right: 1px solid #edf1f4;
   font-size: 12px;
 }
-.date-cell { flex-direction: column; gap: 1px; }
-.date-cell strong { color: #263f55; font-size: 14px; }
-.date-cell small { color: #1597a6; font-size: 9px; font-weight: 800; }
-.weekday-cell { color: #536b7d; font-weight: 800; }
+.date-cell { position: relative; }
+.date-cell strong { display: block; color: #263f55; font-size: 14px; }
+.date-cell small { display: block; color: #1597a6; font-size: 9px; font-weight: 800; }
+.weekday-cell { color: #536b7d !important; font-weight: 800; }
 .schedule-row.saturday .date-cell,
-.schedule-row.saturday .weekday-cell { color: #2e6f9f; background: #f5f9fc; }
+.schedule-row.saturday .weekday-cell { color: #2e6f9f !important; background: #f5f9fc; }
 .schedule-row.saturday .date-cell strong { color: #2e6f9f; }
 .schedule-row.sunday .date-cell,
-.schedule-row.sunday .weekday-cell { color: #c84b40; background: #fff8f7; }
+.schedule-row.sunday .weekday-cell { color: #c84b40 !important; background: #fff8f7; }
 .schedule-row.sunday .date-cell strong { color: #c84b40; }
-.schedule-row.today { box-shadow: inset 3px 0 0 #14a6b6; }
-.schedule-report,
-.report-card-header {
-  display: contents;
-}
-.compat-date { display: none; }
-.report-badges,
-.work-type-cell,
-.work-time-cell,
-.actual-cell,
-.overtime-cell,
-.task-details,
-.report-action-cell {
-  min-width: 0;
-  min-height: 48px;
-  border-right: 1px solid #edf1f4;
-}
-.report-badges {
-  grid-column: 3;
-  display: flex;
+.schedule-row.today .date-cell { box-shadow: inset 3px 0 0 #14a6b6; }
+.compat-header { display: none; }
+.state-cell { text-align: center; }
+.daily-report-state-badge {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
-}
-.report-badges .daily-report-state-badge {
   padding: 4px 8px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 800;
   white-space: nowrap;
 }
-.report-badges .is-draft { background: #fff4d9; color: #9a6500; }
-.report-badges .is-submitted { background: #e8f6ef; color: #28734d; }
+.daily-report-state-badge.is-draft { background: #fff4d9; color: #9a6500; }
+.daily-report-state-badge.is-submitted { background: #e8f6ef; color: #28734d; }
 .work-type-cell,
-.work-time-cell,
 .actual-cell,
-.overtime-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 7px 8px;
-  color: #405970;
-  font-size: 12px;
+.overtime-cell { white-space: nowrap; }
+.work-time-cell { white-space: nowrap; }
+.actual-cell,
+.overtime-cell { font-weight: 700; }
+.overtime-cell.active { color: #b34335 !important; background: #fff9f7; }
+.task-cell {
+  padding: 0 !important;
+  text-align: left !important;
 }
-.work-type-cell { grid-column: 4; }
-.work-time-cell { grid-column: 5; white-space: nowrap; }
-.actual-cell { grid-column: 6; font-weight: 700; }
-.overtime-cell { grid-column: 7; font-weight: 700; }
-.overtime-cell.active { color: #b34335; background: #fff9f7; }
-.task-details {
-  grid-column: 8;
-  position: relative;
-  border-right: 1px solid #edf1f4;
-}
+.task-details { width: 100%; }
 .task-details summary {
-  min-height: 48px;
+  min-height: 47px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -594,27 +580,12 @@ onBeforeUnmount(() => {
 }
 .report-remarks > strong { color: #6a7e8d; font-size: 10px; }
 .report-remarks p { margin: 3px 0 0; color: #405970; font-size: 11px; white-space: pre-wrap; }
-.report-action-cell {
-  grid-column: 9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-right: 0;
-  padding: 6px;
-}
+.report-action-cell { padding: 6px !important; }
 .empty-small { margin: 0; color: #8a99a6; font-size: 11px; }
-.empty-status {
-  grid-column: 3;
-  color: #94a2ae;
-  font-weight: 700;
-}
-.empty-cell { color: #b0bac3; }
-.empty-task {
-  justify-content: flex-start !important;
-  padding-left: 12px !important;
-  color: #b0bac3;
-}
-.operation-empty { border-right: 0 !important; }
+.empty-status { color: #94a2ae !important; font-weight: 700; }
+.empty-cell,
+.empty-task { color: #b0bac3 !important; }
+.empty-task { text-align: left !important; padding-left: 12px !important; }
 :deep(.daily-report-edit-button) {
   min-height: 30px;
   padding: 4px 9px;
