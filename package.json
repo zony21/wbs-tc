@@ -12,7 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.11.1"
     "express": "^4.21.2",
     "vue": "^3.5.13"
   },
