@@ -1,6 +1,5 @@
 @echo off
 setlocal
-cd /d "%~dp0"
 
 set "WBS_TC_DIR=%~dp0"
 set "WBS_TC_LAUNCHER=%~dp0start-app.bat"
@@ -16,15 +15,7 @@ echo   WBS TC desktop shortcut setup
 echo ======================================
 echo.
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$desktop=[Environment]::GetFolderPath('Desktop');" ^
-  "$shell=New-Object -ComObject WScript.Shell;" ^
-  "$shortcut=$shell.CreateShortcut((Join-Path $desktop 'WBS TC.lnk'));" ^
-  "$shortcut.TargetPath=$env:WBS_TC_LAUNCHER;" ^
-  "$shortcut.WorkingDirectory=$env:WBS_TC_DIR;" ^
-  "$shortcut.Description='Launch WBS TC';" ^
-  "$shortcut.Save();" ^
-  "Write-Host ('Created: ' + (Join-Path $desktop 'WBS TC.lnk'))"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$desktop=[Environment]::GetFolderPath('Desktop'); $appDir=$env:WBS_TC_DIR.TrimEnd([char]92); $launcher=Join-Path $appDir 'start-app.bat'; $shell=New-Object -ComObject WScript.Shell; $shortcut=$shell.CreateShortcut((Join-Path $desktop 'WBS TC.lnk')); $shortcut.TargetPath=$launcher; $shortcut.WorkingDirectory=$appDir; $shortcut.Description='Launch WBS TC'; $shortcut.Save(); Write-Host ('Created: ' + (Join-Path $desktop 'WBS TC.lnk'))"
 
 if errorlevel 1 (
   echo.
