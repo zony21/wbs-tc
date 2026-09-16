@@ -4,8 +4,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+interface Project {
+  id: string
+  name: string
+  startDate: string
+  dueDate: string
+}
+
 interface Section {
   id: string
+  projectId: string
   name: string
   startDate: string
   dueDate: string
@@ -42,6 +50,7 @@ interface DailyReport {
 }
 
 interface AppState {
+  projects: Project[]
   sections: Section[]
   tasks: WbsTask[]
   reports: DailyReport[]
@@ -59,11 +68,20 @@ db.pragma('foreign_keys = ON')
 db.pragma('journal_mode = WAL')
 
 db.exec(`
-  CREATE TABLE IF NOT EXISTS sections (
+  CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     start_date TEXT NOT NULL,
     due_date TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS sections (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS tasks (
@@ -106,7 +124,16 @@ db.exec(`
     FOREIGN KEY(report_id) REFERENCES daily_reports(id) ON DELETE CASCADE,
     FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
   );
+`)
 
+// Existing databases created before project management did not have project_id.
+const sectionColumns = db.prepare('PRAGMA table_info(sections)').all() as Array<{ name: string }>
+if (!sectionColumns.some((column) => column.name === 'project_id')) {
+  db.exec('ALTER TABLE sections ADD COLUMN project_id TEXT;')
+}
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_sections_project ON sections(project_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_section ON tasks(section_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
   CREATE INDEX IF NOT EXISTS idx_reports_date ON daily_reports(date);
@@ -115,35 +142,74 @@ db.exec(`
 `)
 
 const seedState: AppState = {
+  projects: [
+    {
+      id: 'P-001',
+      name: '案件名未設定',
+      startDate: '2026-07-01',
+      dueDate: '2027-05-31',
+    },
+  ],
+  // Uploaded master schedule only exposes month-level timing. Personnel/assignment bars are intentionally not imported.
   sections: [
-    { id: 'S-01', name: '要件定義', startDate: '2026-09-01', dueDate: '2026-09-25' },
-    { id: 'S-02', name: '基本設計', startDate: '2026-09-26', dueDate: '2026-10-23' },
-    { id: 'S-03', name: '開発', startDate: '2026-10-24', dueDate: '2026-11-20' },
-    { id: 'S-04', name: 'テスト', startDate: '2026-11-07', dueDate: '2026-11-27' },
+    { id: 'S-001', projectId: 'P-001', name: '要件定義', startDate: '2026-08-01', dueDate: '2026-09-30' },
+    { id: 'S-002', projectId: 'P-001', name: '基本設計', startDate: '2026-09-01', dueDate: '2026-10-31' },
+    { id: 'S-003', projectId: 'P-001', name: '詳細設計', startDate: '2026-11-01', dueDate: '2026-12-31' },
+    { id: 'S-004', projectId: 'P-001', name: '製造・単体テスト', startDate: '2026-12-01', dueDate: '2027-02-28' },
+    { id: 'S-005', projectId: 'P-001', name: '社内結合テスト', startDate: '2027-02-01', dueDate: '2027-03-31' },
+    { id: 'S-006', projectId: 'P-001', name: '機器設置・疎通確認', startDate: '2026-12-01', dueDate: '2027-03-31' },
+    { id: 'S-007', projectId: 'P-001', name: '現地テスト', startDate: '2027-03-01', dueDate: '2027-04-30' },
+    { id: 'S-008', projectId: 'P-001', name: '稼働立会い', startDate: '2027-05-01', dueDate: '2027-05-31' },
+    { id: 'S-009', projectId: 'P-001', name: 'マシンセットアップ', startDate: '2027-03-01', dueDate: '2027-03-31' },
+    { id: 'S-010', projectId: 'P-001', name: '完成図書作成', startDate: '2027-04-01', dueDate: '2027-04-30' },
   ],
-  tasks: [
-    { id: 'T-001', sectionId: 'S-01', parentId: null, name: '搬送要件整理', category: '要件定義', startDate: '2026-09-01', dueDate: '2026-09-12', progress: 100, assignees: ['田中', '佐藤'] },
-    { id: 'T-002', sectionId: 'S-01', parentId: 'T-001', name: '搬送パターン整理', category: '要件定義', startDate: '2026-09-01', dueDate: '2026-09-08', progress: 100, assignees: ['田中'] },
-    { id: 'T-003', sectionId: 'S-01', parentId: 'T-001', name: 'QA整理', category: '要件定義', startDate: '2026-09-05', dueDate: '2026-09-12', progress: 100, assignees: ['佐藤'] },
-    { id: 'T-004', sectionId: 'S-01', parentId: null, name: '画面要件整理', category: '要件定義', startDate: '2026-09-10', dueDate: '2026-09-25', progress: 60, assignees: ['鈴木', '田中'] },
-    { id: 'T-005', sectionId: 'S-01', parentId: 'T-004', name: '操作画面レイアウト', category: '要件定義', startDate: '2026-09-10', dueDate: '2026-09-18', progress: 80, assignees: ['鈴木'] },
-    { id: 'T-006', sectionId: 'S-02', parentId: null, name: 'DB設計', category: '基本設計', startDate: '2026-09-26', dueDate: '2026-10-09', progress: 25, assignees: ['田中', '山田'] },
-    { id: 'T-007', sectionId: 'S-02', parentId: null, name: '画面基本設計', category: '基本設計', startDate: '2026-10-01', dueDate: '2026-10-16', progress: 10, assignees: ['鈴木', '佐藤'] },
-  ],
+  tasks: [],
   reports: [],
 }
 
-const insertSection = db.prepare('INSERT INTO sections (id, name, start_date, due_date) VALUES (?, ?, ?, ?)')
+const insertProject = db.prepare('INSERT INTO projects (id, name, start_date, due_date) VALUES (?, ?, ?, ?)')
+const insertSection = db.prepare('INSERT INTO sections (id, project_id, name, start_date, due_date) VALUES (?, ?, ?, ?, ?)')
 const insertTask = db.prepare('INSERT INTO tasks (id, section_id, parent_id, name, category, start_date, due_date, progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
 const insertAssignee = db.prepare('INSERT INTO task_assignees (task_id, position, assignee) VALUES (?, ?, ?)')
 const insertReport = db.prepare('INSERT INTO daily_reports (id, date, work_type, start_time, end_time, break_hours, overtime_hours, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
 const insertEntry = db.prepare('INSERT INTO daily_entries (row_id, report_id, task_id, hours) VALUES (?, ?, ?, ?)')
 
-const replaceState = db.transaction((state: AppState) => {
-  db.exec('DELETE FROM daily_entries; DELETE FROM daily_reports; DELETE FROM task_assignees; DELETE FROM tasks; DELETE FROM sections;')
+function normalizeState(input: Partial<AppState>): AppState {
+  const sections = Array.isArray(input.sections) ? input.sections : []
+  const tasks = Array.isArray(input.tasks) ? input.tasks : []
+  const reports = Array.isArray(input.reports) ? input.reports : []
+  let projects = Array.isArray(input.projects) ? input.projects : []
+
+  if (!projects.length) {
+    const starts = sections.map((section) => section.startDate).filter(Boolean).sort()
+    const ends = sections.map((section) => section.dueDate).filter(Boolean).sort()
+    projects = [{
+      id: 'P-001',
+      name: '既存案件',
+      startDate: starts[0] || '2026-01-01',
+      dueDate: ends.at(-1) || '2026-12-31',
+    }]
+  }
+
+  const fallbackProjectId = projects[0].id
+  return {
+    projects,
+    sections: sections.map((section) => ({ ...section, projectId: section.projectId || fallbackProjectId })),
+    tasks,
+    reports,
+  }
+}
+
+const replaceState = db.transaction((rawState: AppState) => {
+  const state = normalizeState(rawState)
+  db.exec('DELETE FROM daily_entries; DELETE FROM daily_reports; DELETE FROM task_assignees; DELETE FROM tasks; DELETE FROM sections; DELETE FROM projects;')
+
+  for (const project of state.projects) {
+    insertProject.run(project.id, project.name, project.startDate, project.dueDate)
+  }
 
   for (const section of state.sections) {
-    insertSection.run(section.id, section.name, section.startDate, section.dueDate)
+    insertSection.run(section.id, section.projectId, section.name, section.startDate, section.dueDate)
   }
 
   const parentTasks = state.tasks.filter((task) => task.parentId === null)
@@ -162,14 +228,17 @@ const replaceState = db.transaction((state: AppState) => {
 })
 
 function readState(): AppState {
-  const sections = db.prepare('SELECT id, name, start_date, due_date FROM sections ORDER BY start_date, id').all() as Array<{ id: string; name: string; start_date: string; due_date: string }>
+  const projectRows = db.prepare('SELECT id, name, start_date, due_date FROM projects ORDER BY id').all() as Array<{ id: string; name: string; start_date: string; due_date: string }>
+  const sectionRows = db.prepare('SELECT id, project_id, name, start_date, due_date FROM sections ORDER BY id').all() as Array<{ id: string; project_id: string | null; name: string; start_date: string; due_date: string }>
   const taskRows = db.prepare('SELECT id, section_id, parent_id, name, category, start_date, due_date, progress FROM tasks ORDER BY start_date, id').all() as Array<{ id: string; section_id: string; parent_id: string | null; name: string; category: string; start_date: string; due_date: string; progress: number }>
   const assignees = db.prepare('SELECT task_id, assignee FROM task_assignees ORDER BY task_id, position').all() as Array<{ task_id: string; assignee: string }>
   const reportRows = db.prepare('SELECT id, date, work_type, start_time, end_time, break_hours, overtime_hours, remarks FROM daily_reports ORDER BY date DESC').all() as Array<{ id: string; date: string; work_type: DailyReport['workType']; start_time: string; end_time: string; break_hours: number; overtime_hours: number; remarks: string }>
   const entryRows = db.prepare('SELECT row_id, report_id, task_id, hours FROM daily_entries ORDER BY row_id').all() as Array<{ row_id: string; report_id: string; task_id: string; hours: number }>
+  const fallbackProjectId = projectRows[0]?.id || 'P-001'
 
   return {
-    sections: sections.map((row) => ({ id: row.id, name: row.name, startDate: row.start_date, dueDate: row.due_date })),
+    projects: projectRows.map((row) => ({ id: row.id, name: row.name, startDate: row.start_date, dueDate: row.due_date })),
+    sections: sectionRows.map((row) => ({ id: row.id, projectId: row.project_id || fallbackProjectId, name: row.name, startDate: row.start_date, dueDate: row.due_date })),
     tasks: taskRows.map((row) => ({
       id: row.id,
       sectionId: row.section_id,
@@ -195,8 +264,19 @@ function readState(): AppState {
   }
 }
 
-const sectionCount = db.prepare('SELECT COUNT(*) AS count FROM sections').get() as { count: number }
-if (sectionCount.count === 0) replaceState(seedState)
+const existingSectionCount = (db.prepare('SELECT COUNT(*) AS count FROM sections').get() as { count: number }).count
+const existingProjectCount = (db.prepare('SELECT COUNT(*) AS count FROM projects').get() as { count: number }).count
+
+if (existingProjectCount === 0 && existingSectionCount === 0) {
+  replaceState(seedState)
+} else if (existingProjectCount === 0) {
+  const range = db.prepare('SELECT MIN(start_date) AS start_date, MAX(due_date) AS due_date FROM sections').get() as { start_date: string | null; due_date: string | null }
+  insertProject.run('P-001', '既存案件', range.start_date || '2026-01-01', range.due_date || '2026-12-31')
+  db.prepare("UPDATE sections SET project_id = 'P-001' WHERE project_id IS NULL OR project_id = ''").run()
+} else {
+  const firstProject = db.prepare('SELECT id FROM projects ORDER BY id LIMIT 1').get() as { id: string } | undefined
+  if (firstProject) db.prepare('UPDATE sections SET project_id = ? WHERE project_id IS NULL OR project_id = ?').run(firstProject.id, '')
+}
 
 const app = express()
 app.use(express.json({ limit: '2mb' }))
@@ -217,7 +297,7 @@ app.put('/api/state', (req, res) => {
   }
 
   try {
-    replaceState(state as AppState)
+    replaceState(normalizeState(state))
     res.json({ ok: true })
   } catch (error) {
     console.error(error)

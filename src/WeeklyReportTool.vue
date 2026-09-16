@@ -4,6 +4,16 @@ import { flushStateToDatabase } from './dbSync'
 
 type WorkType = 'normal' | 'staggered' | 'remote' | 'other'
 
+interface Project {
+  id: string
+  name: string
+}
+
+interface Section {
+  id: string
+  projectId: string
+}
+
 interface WbsTask {
   id: string
   sectionId: string
@@ -35,7 +45,8 @@ interface DailyReport {
 }
 
 interface AppState {
-  sections: unknown[]
+  projects: Project[]
+  sections: Section[]
   tasks: WbsTask[]
   reports: DailyReport[]
 }
@@ -80,6 +91,16 @@ function numberLabel(value: number) {
   return String(Number(value.toFixed(2)))
 }
 
+function projectNameForTask(state: AppState, task: WbsTask) {
+  const section = state.sections.find((candidate) => candidate.id === task.sectionId)
+  const project = state.projects.find((candidate) => candidate.id === section?.projectId)
+  return project?.name || '案件不明'
+}
+
+function taskLine(state: AppState, task: WbsTask) {
+  return `・[${projectNameForTask(state, task)}] ${task.name}（${task.progress}%）`
+}
+
 function buildWeeklyReport(state: AppState) {
   const thisWeekStart = mondayOf(currentDateUtc())
   const thisWeekEnd = addDays(thisWeekStart, 6)
@@ -107,12 +128,12 @@ function buildWeeklyReport(state: AppState) {
     .map(([taskId, hours]) => ({ task: state.tasks.find((task) => task.id === taskId), hours }))
     .filter((item): item is { task: WbsTask; hours: number } => Boolean(item.task))
     .sort((a, b) => b.hours - a.hours || a.task.id.localeCompare(b.task.id))
-    .map(({ task }) => `・${task.name}（${task.progress}%）`)
+    .map(({ task }) => taskLine(state, task))
 
   const plans = state.tasks
     .filter((task) => task.progress < 100 && task.startDate <= thisEndKey && task.dueDate >= thisStartKey)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id))
-    .map((task) => `・${task.name}（${task.progress}%）`)
+    .map((task) => taskLine(state, task))
 
   while (achievements.length < 2) achievements.push('・（0%）')
   while (plans.length < 2) plans.push('・（0%）')
@@ -173,7 +194,7 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-weekly-report', gener
         <div>
           <p>WEEKLY REPORT</p>
           <h2 id="weekly-title">週報出力</h2>
-          <span>日報確認から、上層部共有用テキストを生成します。</span>
+          <span>案件名を付けて、上層部共有用テキストを生成します。</span>
         </div>
         <button type="button" aria-label="閉じる" @click="open = false">×</button>
       </header>

@@ -4,8 +4,19 @@ import { flushStateToDatabase } from './dbSync'
 
 type WorkType = 'normal' | 'staggered' | 'remote' | 'other'
 
+interface Project {
+  id: string
+  name: string
+}
+
+interface Section {
+  id: string
+  projectId: string
+}
+
 interface WbsTask {
   id: string
+  sectionId: string
   name: string
   category: string
 }
@@ -29,7 +40,8 @@ interface DailyReport {
 }
 
 interface AppState {
-  sections: unknown[]
+  projects: Project[]
+  sections: Section[]
   tasks: WbsTask[]
   reports: DailyReport[]
 }
@@ -44,7 +56,7 @@ const workTypeLabels: Record<WorkType, string> = {
 const open = ref(false)
 const loading = ref(false)
 const loadError = ref('')
-const state = ref<AppState>({ sections: [], tasks: [], reports: [] })
+const state = ref<AppState>({ projects: [], sections: [], tasks: [], reports: [] })
 
 function currentMonthValue() {
   const now = new Date()
@@ -67,7 +79,10 @@ function reportWorkHours(report: DailyReport) {
 
 function taskName(taskId: string) {
   const task = state.value.tasks.find((candidate) => candidate.id === taskId)
-  return task ? `${task.id}｜${task.name}` : taskId
+  if (!task) return taskId
+  const section = state.value.sections.find((candidate) => candidate.id === task.sectionId)
+  const project = state.value.projects.find((candidate) => candidate.id === section?.projectId)
+  return `${project?.name || '案件不明'}｜${task.id}｜${task.name}`
 }
 
 function numberLabel(value: number) {
@@ -138,7 +153,7 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
         <div>
           <p>DAILY REPORT REVIEW</p>
           <h2 id="daily-review-title">日報確認</h2>
-          <span>月別に、日付ごとの勤務・作業実績を確認します。</span>
+          <span>月別に、日付ごとの勤務・案件別作業実績を確認します。</span>
         </div>
         <div class="daily-review-header-actions">
           <button type="button" class="action-secondary" @click="openWeeklyReport">週報出力</button>
