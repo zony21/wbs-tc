@@ -4,6 +4,7 @@ import DailyReportNavigationBridge from './DailyReportNavigationBridge.vue'
 import DailyReportReviewTool from './DailyReportReviewTool.vue'
 import WeeklyReportTool from './WeeklyReportTool.vue'
 import DailyReportValidationGuard from './DailyReportValidationGuard.vue'
+import ScheduleTaskEnhancer from './ScheduleTaskEnhancer.vue'
 </script>
 
 <template>
@@ -12,4 +13,5 @@ import DailyReportValidationGuard from './DailyReportValidationGuard.vue'
   <DailyReportReviewTool />
   <WeeklyReportTool />
   <DailyReportValidationGuard />
+  <ScheduleTaskEnhancer />
 </template>
