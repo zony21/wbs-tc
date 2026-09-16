@@ -141,6 +141,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_entries_task ON daily_entries(task_id);
 `)
 
+// Initial master schedule is based only on the supplied image. Personnel counts and SE/PG assignment bars are not imported.
+// The source image shows month-level periods, but no exact calendar dates, so month starts/ends are used without inventing day-level detail.
 const seedState: AppState = {
   projects: [
     {
@@ -150,7 +152,6 @@ const seedState: AppState = {
       dueDate: '2027-05-31',
     },
   ],
-  // Uploaded master schedule only exposes month-level timing. Personnel/assignment bars are intentionally not imported.
   sections: [
     { id: 'S-001', projectId: 'P-001', name: '要件定義', startDate: '2026-08-01', dueDate: '2026-09-30' },
     { id: 'S-002', projectId: 'P-001', name: '基本設計', startDate: '2026-09-01', dueDate: '2026-10-31' },
@@ -264,11 +265,37 @@ function readState(): AppState {
   }
 }
 
+const legacySectionNames = new Set(['要件定義', '基本設計', '開発', 'テスト'])
+const legacyTaskNames = new Set([
+  '搬送要件整理',
+  '搬送パターン整理',
+  'QA整理',
+  '画面要件整理',
+  '操作画面レイアウト',
+  'DB設計',
+  '画面基本設計',
+])
+
+function isLegacySampleState() {
+  const sections = db.prepare('SELECT name FROM sections ORDER BY id').all() as Array<{ name: string }>
+  const tasks = db.prepare('SELECT name FROM tasks ORDER BY id').all() as Array<{ name: string }>
+  const reportCount = (db.prepare('SELECT COUNT(*) AS count FROM daily_reports').get() as { count: number }).count
+
+  if (reportCount > 0 || sections.length === 0) return false
+  const onlyLegacySections = sections.length <= legacySectionNames.size && sections.every((row) => legacySectionNames.has(row.name))
+  const onlyLegacyTasks = tasks.length <= legacyTaskNames.size && tasks.every((row) => legacyTaskNames.has(row.name))
+  return onlyLegacySections && onlyLegacyTasks
+}
+
 const existingSectionCount = (db.prepare('SELECT COUNT(*) AS count FROM sections').get() as { count: number }).count
 const existingProjectCount = (db.prepare('SELECT COUNT(*) AS count FROM projects').get() as { count: number }).count
 
 if (existingProjectCount === 0 && existingSectionCount === 0) {
   replaceState(seedState)
+} else if (isLegacySampleState()) {
+  // Replace only the known old sample dataset. User-created project/task/report data is never reset automatically.
+  replaceState(seedState)
+  console.log('Legacy sample data replaced with the supplied-image master schedule.')
 } else if (existingProjectCount === 0) {
   const range = db.prepare('SELECT MIN(start_date) AS start_date, MAX(due_date) AS due_date FROM sections').get() as { start_date: string | null; due_date: string | null }
   insertProject.run('P-001', '既存案件', range.start_date || '2026-01-01', range.due_date || '2026-12-31')
