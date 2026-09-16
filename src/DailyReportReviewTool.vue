@@ -208,7 +208,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">DAILY REPORT REVIEW</p>
         <h1 id="daily-review-title">日報確認</h1>
-        <span>月の日付を縦に並べたカレンダー形式で、日報を1日1レコードで確認します。</span>
+        <span>月ごとの勤務実績と作業内容を、1日1行で確認できます。</span>
       </div>
       <div class="daily-review-header-actions">
         <button type="button" class="action-secondary" @click="openWeeklyReport">週報出力</button>
@@ -236,7 +236,6 @@ onBeforeUnmount(() => {
 
       <div class="schedule-scroll">
         <div class="monthly-schedule">
-          <div class="schedule-title">{{ monthLabel() }}　日報カレンダー＆スケジュール</div>
           <div class="schedule-header schedule-grid">
             <div>日</div>
             <div>曜日</div>
@@ -308,6 +307,8 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </details>
+
+              <div class="report-action-cell"></div>
             </article>
 
             <template v-else>
@@ -317,7 +318,7 @@ onBeforeUnmount(() => {
               <div class="empty-cell">－</div>
               <div class="empty-cell">－</div>
               <div class="empty-task">－</div>
-              <div class="empty-cell">－</div>
+              <div class="empty-cell operation-empty">－</div>
             </template>
           </section>
         </div>
@@ -380,6 +381,7 @@ onBeforeUnmount(() => {
   border: 1px solid #dce5eb;
   border-radius: 14px;
   background: #fff;
+  box-shadow: 0 2px 8px rgba(31, 64, 83, .04);
 }
 .daily-review-monthbar button {
   width: 36px;
@@ -413,6 +415,7 @@ onBeforeUnmount(() => {
   border: 1px solid #dce5eb;
   border-radius: 12px;
   background: #fff;
+  box-shadow: 0 2px 8px rgba(31, 64, 83, .04);
 }
 .daily-review-summary span { display: block; color: #6b7f8e; font-size: 11px; }
 .daily-review-summary strong { display: block; margin-top: 3px; color: #17354d; font-size: 21px; }
@@ -423,41 +426,39 @@ onBeforeUnmount(() => {
 }
 .monthly-schedule {
   min-width: 1120px;
-  border: 1px solid #80909d;
-  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #dce5eb;
+  border-radius: 14px;
   background: #fff;
-}
-.schedule-title {
-  padding: 16px 18px;
-  border-bottom: 1px solid #80909d;
-  background: #fff;
-  color: #111;
-  text-align: center;
-  font-size: 22px;
-  font-weight: 900;
-  letter-spacing: .04em;
+  box-shadow: 0 4px 18px rgba(31, 64, 83, .06);
 }
 .schedule-grid {
   display: grid;
-  grid-template-columns: 56px 56px 92px 110px 130px 90px 80px minmax(280px, 1fr) 70px;
+  grid-template-columns: 56px 58px 96px 112px 138px 90px 82px minmax(300px, 1fr) 76px;
 }
 .schedule-header {
-  background: #eef1f3;
-  color: #273a49;
-  font-size: 12px;
+  background: #f7f9fb;
+  color: #5b7083;
+  font-size: 11px;
   font-weight: 800;
   text-align: center;
 }
 .schedule-header > div {
-  padding: 7px 6px;
-  border-right: 1px solid #9ba8b2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 7px 8px;
+  border-right: 1px solid #e1e8ee;
 }
 .schedule-header > div:last-child { border-right: 0; }
 .schedule-row {
-  min-height: 40px;
-  border-top: 1px dotted #9aa7b1;
+  min-height: 48px;
   background: #fff;
+  border-top: 1px solid #edf1f4;
+  transition: background .15s ease;
 }
+.schedule-row:hover { background: #fbfdfe; }
 .schedule-row > .date-cell,
 .schedule-row > .weekday-cell,
 .schedule-row > .empty-status,
@@ -467,45 +468,47 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: 6px 7px;
-  border-right: 1px solid #b3bdc5;
+  min-height: 48px;
+  padding: 7px 8px;
+  border-right: 1px solid #edf1f4;
   font-size: 12px;
 }
 .date-cell { flex-direction: column; gap: 1px; }
-.date-cell strong { font-size: 14px; }
+.date-cell strong { color: #263f55; font-size: 14px; }
 .date-cell small { color: #1597a6; font-size: 9px; font-weight: 800; }
-.weekday-cell { font-weight: 800; }
+.weekday-cell { color: #536b7d; font-weight: 800; }
 .schedule-row.saturday .date-cell,
-.schedule-row.saturday .weekday-cell { color: #22669a; background: #f4f8fc; }
+.schedule-row.saturday .weekday-cell { color: #2e6f9f; background: #f5f9fc; }
+.schedule-row.saturday .date-cell strong { color: #2e6f9f; }
 .schedule-row.sunday .date-cell,
-.schedule-row.sunday .weekday-cell { color: #c43c32; background: #fff7f6; }
+.schedule-row.sunday .weekday-cell { color: #c84b40; background: #fff8f7; }
+.schedule-row.sunday .date-cell strong { color: #c84b40; }
 .schedule-row.today { box-shadow: inset 3px 0 0 #14a6b6; }
-.schedule-report {
-  grid-column: 3 / 10;
-  display: grid;
-  grid-template-columns: 92px 110px 130px 90px 80px minmax(280px, 1fr) 70px;
-  min-width: 0;
+.schedule-report,
+.report-card-header {
+  display: contents;
 }
-.report-card-header { display: contents; }
 .compat-date { display: none; }
 .report-badges,
 .work-type-cell,
 .work-time-cell,
 .actual-cell,
 .overtime-cell,
-.task-details {
+.task-details,
+.report-action-cell {
   min-width: 0;
-  border-right: 1px solid #b3bdc5;
+  min-height: 48px;
+  border-right: 1px solid #edf1f4;
 }
 .report-badges {
-  grid-column: 1;
+  grid-column: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5px;
+  padding: 6px;
 }
 .report-badges .daily-report-state-badge {
-  padding: 4px 7px;
+  padding: 4px 8px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 800;
@@ -513,47 +516,34 @@ onBeforeUnmount(() => {
 }
 .report-badges .is-draft { background: #fff4d9; color: #9a6500; }
 .report-badges .is-submitted { background: #e8f6ef; color: #28734d; }
-.work-type-cell {
-  grid-column: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 8px;
-  font-size: 12px;
-}
-.work-time-cell {
-  grid-column: 3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 8px;
-  font-size: 12px;
-  white-space: nowrap;
-}
+.work-type-cell,
+.work-time-cell,
 .actual-cell,
 .overtime-cell {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
+  padding: 7px 8px;
+  color: #405970;
   font-size: 12px;
-  font-weight: 700;
 }
-.actual-cell { grid-column: 4; }
-.overtime-cell { grid-column: 5; }
-.overtime-cell.active { color: #b34335; background: #fff7f5; }
+.work-type-cell { grid-column: 4; }
+.work-time-cell { grid-column: 5; white-space: nowrap; }
+.actual-cell { grid-column: 6; font-weight: 700; }
+.overtime-cell { grid-column: 7; font-weight: 700; }
+.overtime-cell.active { color: #b34335; background: #fff9f7; }
 .task-details {
-  grid-column: 6;
+  grid-column: 8;
   position: relative;
-  padding: 0;
+  border-right: 1px solid #edf1f4;
 }
 .task-details summary {
-  min-height: 39px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 7px 12px;
   cursor: pointer;
   list-style: none;
 }
@@ -568,19 +558,20 @@ onBeforeUnmount(() => {
 }
 .task-details summary strong {
   flex: 0 0 auto;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 999px;
   background: #eef4f7;
   color: #60758a;
   font-size: 10px;
 }
-.task-details[open] summary { background: #f4f9fa; }
+.task-details[open] { background: #f9fbfc; }
+.task-details[open] summary { background: #f3f8f9; }
 .task-detail-panel {
-  padding: 9px 10px 10px;
-  border-top: 1px solid #dfe7ed;
+  padding: 10px 12px 12px;
+  border-top: 1px solid #e4ebf0;
   background: #f9fbfc;
 }
-.task-list { display: grid; gap: 5px; }
+.task-list { display: grid; gap: 6px; }
 .task-list > div {
   display: flex;
   align-items: center;
@@ -598,35 +589,48 @@ onBeforeUnmount(() => {
 .task-list > div strong { flex: 0 0 auto; color: #203e56; }
 .report-remarks {
   margin-top: 8px;
-  padding-top: 7px;
+  padding-top: 8px;
   border-top: 1px dashed #d6e0e7;
 }
 .report-remarks > strong { color: #6a7e8d; font-size: 10px; }
 .report-remarks p { margin: 3px 0 0; color: #405970; font-size: 11px; white-space: pre-wrap; }
+.report-action-cell {
+  grid-column: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 0;
+  padding: 6px;
+}
 .empty-small { margin: 0; color: #8a99a6; font-size: 11px; }
 .empty-status {
   grid-column: 3;
-  color: #8a99a6;
+  color: #94a2ae;
   font-weight: 700;
 }
-.empty-cell { color: #a5afb7; }
+.empty-cell { color: #b0bac3; }
 .empty-task {
   justify-content: flex-start !important;
-  padding-left: 10px !important;
-  color: #a5afb7;
+  padding-left: 12px !important;
+  color: #b0bac3;
 }
+.operation-empty { border-right: 0 !important; }
 :deep(.daily-report-edit-button) {
-  grid-column: 7;
-  align-self: center;
-  justify-self: center;
-  min-height: 28px;
-  padding: 4px 8px;
+  min-height: 30px;
+  padding: 4px 9px;
   margin: 0;
   border: 1px solid #cbd7e2;
   border-radius: 7px;
   background: #fff;
   color: #17354d;
   font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+:deep(.daily-report-edit-button:hover) {
+  border-color: #8fcbd1;
+  background: #f1fbfc;
+  color: #117782;
 }
 .daily-review-loading,
 .daily-review-error {
