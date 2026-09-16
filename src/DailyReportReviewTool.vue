@@ -116,6 +116,7 @@ const totalOvertimeHours = computed(() => filteredReports.value.reduce((sum, rep
 const totalTaskHours = computed(() => filteredReports.value.reduce((sum, report) => sum + report.entries.reduce((entrySum, entry) => entrySum + (Number(entry.hours) || 0), 0), 0))
 
 async function openReview() {
+  open.value = true
   loading.value = true
   loadError.value = ''
   try {
@@ -123,14 +124,16 @@ async function openReview() {
     const response = await fetch('/api/state', { headers: { Accept: 'application/json' } })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     state.value = await response.json() as AppState
-    open.value = true
   } catch (error) {
     console.error(error)
     loadError.value = '日報データをSQLiteから取得できませんでした。'
-    open.value = true
   } finally {
     loading.value = false
   }
+}
+
+function closeReview() {
+  open.value = false
 }
 
 function openDailyEntry() {
@@ -142,33 +145,40 @@ function openWeeklyReport() {
   window.dispatchEvent(new CustomEvent('wbs-open-weekly-report'))
 }
 
-onMounted(() => window.addEventListener('wbs-open-daily-review', openReview))
-onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openReview))
+onMounted(() => {
+  window.addEventListener('wbs-open-daily-review', openReview)
+  window.addEventListener('wbs-close-daily-review', closeReview)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('wbs-open-daily-review', openReview)
+  window.removeEventListener('wbs-close-daily-review', closeReview)
+})
 </script>
 
 <template>
-  <div v-if="open" class="daily-review-backdrop" @click.self="open = false">
-    <section class="daily-review-modal" role="dialog" aria-modal="true" aria-labelledby="daily-review-title">
-      <header class="daily-review-header">
-        <div>
-          <p>DAILY REPORT REVIEW</p>
-          <h2 id="daily-review-title">日報確認</h2>
-          <span>月別に、日付ごとの勤務・案件別作業実績を確認します。</span>
-        </div>
-        <div class="daily-review-header-actions">
-          <button type="button" class="action-secondary" @click="openWeeklyReport">週報出力</button>
-          <button type="button" class="action-primary" @click="openDailyEntry">＋ 日報登録</button>
-          <button type="button" class="close-button" aria-label="閉じる" @click="open = false">×</button>
-        </div>
-      </header>
-
-      <div class="daily-review-monthbar">
-        <button type="button" aria-label="前月" @click="shiftMonth(-1)">‹</button>
-        <input v-model="selectedMonth" type="month" aria-label="確認する月">
-        <button type="button" aria-label="翌月" @click="shiftMonth(1)">›</button>
-        <strong>{{ monthLabel() }}</strong>
+  <section v-if="open" class="daily-review-page" aria-labelledby="daily-review-title">
+    <header class="daily-review-header">
+      <div>
+        <p class="eyebrow">DAILY REPORT REVIEW</p>
+        <h1 id="daily-review-title">日報確認</h1>
+        <span>月別に、日付ごとの勤務・案件別作業実績を確認します。</span>
       </div>
+      <div class="daily-review-header-actions">
+        <button type="button" class="action-secondary" @click="openWeeklyReport">週報出力</button>
+        <button type="button" class="action-primary" @click="openDailyEntry">＋ 日報登録</button>
+      </div>
+    </header>
 
+    <div class="daily-review-monthbar">
+      <button type="button" aria-label="前月" @click="shiftMonth(-1)">‹</button>
+      <input v-model="selectedMonth" type="month" aria-label="確認する月">
+      <button type="button" aria-label="翌月" @click="shiftMonth(1)">›</button>
+      <strong>{{ monthLabel() }}</strong>
+    </div>
+
+    <div v-if="loading" class="daily-review-loading">日報を読み込んでいます…</div>
+    <template v-else>
       <p v-if="loadError" class="daily-review-error">{{ loadError }}</p>
 
       <div class="daily-review-summary">
@@ -219,80 +229,69 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
 
         <div v-if="!filteredReports.length" class="daily-review-empty">
           <strong>{{ monthLabel() }}の日報はありません</strong>
-          <span>右上の「日報登録」から登録できます。</span>
+          <span>「日報登録」から登録できます。</span>
           <button type="button" @click="openDailyEntry">＋ 日報登録</button>
         </div>
       </div>
-
-      <footer class="daily-review-footer">
-        <span>SQLiteに保存されている日報を表示しています。</span>
-        <button type="button" @click="open = false">閉じる</button>
-      </footer>
-    </section>
-  </div>
+    </template>
+  </section>
 </template>
 
 <style scoped>
-.daily-review-backdrop {
+.daily-review-page {
   position: fixed;
-  inset: 0;
-  z-index: 120;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(17, 31, 48, .48);
+  inset: 0 0 0 236px;
+  z-index: 40;
+  overflow-y: auto;
+  padding: 26px clamp(18px, 3vw, 42px) 48px;
+  background: #f4f7fa;
+  color: #263b50;
 }
-.daily-review-modal {
-  width: min(1100px, 96vw);
-  max-height: 92vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: 18px;
-  background: #f5f8fa;
-  box-shadow: 0 24px 70px rgba(15, 31, 49, .24);
-}
-.daily-review-header,
-.daily-review-footer {
+.daily-review-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 22px;
-  background: #fff;
+  gap: 18px;
+  margin-bottom: 20px;
 }
-.daily-review-header { border-bottom: 1px solid #e1e8ef; }
-.daily-review-header p { margin: 0 0 2px; color: #718196; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
-.daily-review-header h2 { margin: 0; color: #1d344c; font-size: 24px; }
-.daily-review-header > div > span { display: block; margin-top: 4px; color: #758496; font-size: 12px; }
+.eyebrow {
+  margin: 0 0 5px;
+  color: #14a6b6;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.daily-review-header h1 {
+  margin: 0;
+  color: #17354d;
+  font-size: clamp(24px, 3vw, 34px);
+}
+.daily-review-header > div > span {
+  display: block;
+  margin-top: 7px;
+  color: #6b7f8e;
+  font-size: 13px;
+}
 .daily-review-header-actions { display: flex; align-items: center; gap: 8px; }
 .daily-review-header-actions button,
-.daily-review-footer button,
 .daily-review-empty button {
-  min-height: 40px;
+  min-height: 42px;
   padding: 0 16px;
   border-radius: 9px;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 }
-.action-primary { border: 0; background: #173f5f; color: #fff; }
-.action-secondary { border: 1px solid #cbd7e2; background: #fff; color: #29465f; }
-.daily-review-header-actions .close-button {
-  width: 40px;
-  padding: 0;
-  border: 0;
-  background: #eef3f7;
-  color: #20364d;
-  font-size: 22px;
-}
+.action-primary { border: 0; background: #14a6b6; color: #fff; }
+.action-secondary { border: 1px solid #dce5eb; background: #fff; color: #17354d; }
 .daily-review-monthbar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 22px;
+  padding: 14px 18px;
+  border: 1px solid #dce5eb;
+  border-radius: 14px;
   background: #fff;
-  border-bottom: 1px solid #e1e8ef;
 }
 .daily-review-monthbar button {
   width: 36px;
@@ -300,15 +299,18 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
   border: 1px solid #d5dee7;
   border-radius: 9px;
   background: #fff;
+  color: #17354d;
   font-size: 22px;
   cursor: pointer;
 }
 .daily-review-monthbar input {
+  width: auto;
   min-height: 38px;
   padding: 0 10px;
   border: 1px solid #cad6e2;
   border-radius: 9px;
   background: #fff;
+  color: #243746;
   font: inherit;
 }
 .daily-review-monthbar strong { margin-left: 4px; color: #20364d; }
@@ -316,37 +318,29 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  padding: 16px 22px 12px;
+  margin-top: 16px;
 }
 .daily-review-summary > div {
-  padding: 14px 16px;
-  border: 1px solid #dfe7ee;
-  border-radius: 12px;
-  background: #fff;
-}
-.daily-review-summary span { display: block; color: #6d7e91; font-size: 12px; }
-.daily-review-summary strong { display: block; margin-top: 4px; color: #1c354d; font-size: 22px; }
-.daily-report-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
-  padding: 8px 22px 22px;
-}
-.daily-report-card {
-  flex: 0 0 auto;
-  overflow: hidden;
-  border: 1px solid #dce5ed;
+  padding: 16px 18px;
+  border: 1px solid #dce5eb;
   border-radius: 14px;
   background: #fff;
-  box-shadow: 0 3px 12px rgba(29, 52, 76, .04);
+}
+.daily-review-summary span { display: block; color: #6b7f8e; font-size: 12px; }
+.daily-review-summary strong { display: block; margin-top: 4px; color: #17354d; font-size: 24px; }
+.daily-report-list { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.daily-report-card {
+  overflow: hidden;
+  border: 1px solid #dce5eb;
+  border-radius: 14px;
+  background: #fff;
 }
 .report-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border-bottom: 1px solid #e7edf2;
 }
 .report-card-header strong { display: block; color: #1d3a54; font-size: 18px; }
@@ -366,7 +360,7 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
   grid-template-columns: 2fr repeat(3, 1fr);
   border-bottom: 1px solid #edf1f4;
 }
-.report-metrics > div { padding: 12px 16px; border-right: 1px solid #edf1f4; }
+.report-metrics > div { padding: 12px 18px; border-right: 1px solid #edf1f4; }
 .report-metrics > div:last-child { border-right: 0; }
 .report-metrics span { display: block; color: #7a8998; font-size: 11px; }
 .report-metrics strong { display: block; margin-top: 3px; color: #29435b; font-size: 14px; }
@@ -375,7 +369,7 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(240px, .8fr);
   gap: 18px;
-  padding: 16px;
+  padding: 16px 18px 18px;
 }
 .report-content-grid h3 { margin: 0 0 9px; color: #597087; font-size: 12px; }
 .task-list { display: flex; flex-direction: column; gap: 6px; }
@@ -396,7 +390,7 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
   display: grid;
   justify-items: center;
   gap: 7px;
-  padding: 44px 20px;
+  padding: 48px 20px;
   border: 1px dashed #cad6e1;
   border-radius: 14px;
   background: #fff;
@@ -404,28 +398,19 @@ onBeforeUnmount(() => window.removeEventListener('wbs-open-daily-review', openRe
 }
 .daily-review-empty strong { color: #29445d; font-size: 16px; }
 .daily-review-empty button { margin-top: 8px; border: 0; background: #173f5f; color: #fff; }
-.daily-review-error { margin: 12px 22px 0; padding: 10px 12px; border-radius: 9px; background: #fff0ee; color: #b13f32; font-weight: 700; }
-.daily-review-footer {
-  border-top: 1px solid #e1e8ef;
-  color: #718196;
-  font-size: 12px;
-}
-.daily-review-footer button { border: 0; background: #203d58; color: #fff; }
+.daily-review-loading { padding: 64px 20px; text-align: center; color: #60758a; }
+.daily-review-error { margin: 16px 0 0; padding: 12px 14px; border-radius: 9px; background: #fff0ee; color: #b13f32; font-weight: 700; }
+:global(.sidebar) { position: relative; z-index: 50; }
 @media (max-width: 760px) {
-  .daily-review-backdrop { padding: 8px; }
-  .daily-review-modal { width: 100%; max-height: 96vh; }
-  .daily-review-header { align-items: flex-start; flex-direction: column; padding: 14px; }
+  .daily-review-page { inset: 72px 0 0 0; padding: 18px 14px 36px; }
+  .daily-review-header { align-items: flex-start; flex-direction: column; }
   .daily-review-header-actions { width: 100%; }
-  .daily-review-header-actions .action-primary,
-  .daily-review-header-actions .action-secondary { flex: 1; }
-  .daily-review-header-actions .close-button { flex: 0 0 40px; }
-  .daily-review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
-  .daily-review-monthbar { padding: 12px 14px; flex-wrap: wrap; }
-  .daily-report-list { padding: 4px 12px 14px; }
+  .daily-review-header-actions button { flex: 1; }
+  .daily-review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .daily-review-monthbar { flex-wrap: wrap; }
   .report-card-header { align-items: flex-start; flex-direction: column; }
   .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .report-metrics > div { border-bottom: 1px solid #edf1f4; }
   .report-content-grid { grid-template-columns: 1fr; }
-  .daily-review-footer { padding: 12px 14px; }
 }
 </style>
