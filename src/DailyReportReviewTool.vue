@@ -46,10 +46,11 @@ interface AppState {
   reports: DailyReport[]
 }
 
-interface CalendarDay {
+interface ScheduleDay {
   key: string
   day: number
-  inMonth: boolean
+  weekdayIndex: number
+  weekdayLabel: string
   isToday: boolean
   report?: DailyReport
 }
@@ -61,7 +62,7 @@ const workTypeLabels: Record<WorkType, string> = {
   other: 'その他',
 }
 
-const weekdayLabels = ['月', '火', '水', '木', '金', '土', '日']
+const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土']
 const open = ref(false)
 const loading = ref(false)
 const loadError = ref('')
@@ -90,6 +91,10 @@ function reportWorkHours(report: DailyReport) {
   return Math.max(0, duration / 60 - (Number(report.breakHours) || 0))
 }
 
+function taskHours(report: DailyReport) {
+  return report.entries.reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0)
+}
+
 function taskName(taskId: string) {
   const task = state.value.tasks.find((candidate) => candidate.id === taskId)
   if (!task) return taskId
@@ -105,13 +110,20 @@ function taskTooltip(report: DailyReport) {
     .join('\n')
 }
 
+function taskSummary(report: DailyReport) {
+  if (!report.entries.length) return '作業なし'
+  const first = taskName(report.entries[0].taskId)
+  if (report.entries.length === 1) return `${first} / ${numberLabel(taskHours(report))}h`
+  return `${first} ほか${report.entries.length - 1}件 / ${numberLabel(taskHours(report))}h`
+}
+
 function numberLabel(value: number) {
   return Number(value.toFixed(2)).toString()
 }
 
 function monthLabel() {
   const [year, month] = selectedMonth.value.split('-')
-  return `${year}年${Number(month)}月`
+  return `${year}年 ${Number(month)}月`
 }
 
 function shiftMonth(amount: number) {
@@ -124,22 +136,21 @@ const filteredReports = computed(() => state.value.reports
   .filter((report) => report.date.startsWith(`${selectedMonth.value}-`))
   .sort((a, b) => a.date.localeCompare(b.date)))
 
-const calendarDays = computed<CalendarDay[]>(() => {
+const scheduleDays = computed<ScheduleDay[]>(() => {
   const [year, month] = selectedMonth.value.split('-').map(Number)
-  const firstDay = new Date(year, month - 1, 1)
-  const mondayOffset = (firstDay.getDay() + 6) % 7
-  const gridStart = new Date(year, month - 1, 1 - mondayOffset)
+  const lastDay = new Date(year, month, 0).getDate()
   const reportMap = new Map(state.value.reports.map((report) => [report.date, report]))
   const today = dateKey(new Date())
 
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(gridStart)
-    date.setDate(gridStart.getDate() + index)
+  return Array.from({ length: lastDay }, (_, index) => {
+    const date = new Date(year, month - 1, index + 1)
     const key = dateKey(date)
+    const weekdayIndex = date.getDay()
     return {
       key,
-      day: date.getDate(),
-      inMonth: date.getFullYear() === year && date.getMonth() === month - 1,
+      day: index + 1,
+      weekdayIndex,
+      weekdayLabel: weekdayLabels[weekdayIndex],
       isToday: key === today,
       report: reportMap.get(key),
     }
@@ -148,7 +159,7 @@ const calendarDays = computed<CalendarDay[]>(() => {
 
 const totalWorkHours = computed(() => filteredReports.value.reduce((sum, report) => sum + reportWorkHours(report), 0))
 const totalOvertimeHours = computed(() => filteredReports.value.reduce((sum, report) => sum + (Number(report.overtimeHours) || 0), 0))
-const totalTaskHours = computed(() => filteredReports.value.reduce((sum, report) => sum + report.entries.reduce((entrySum, entry) => entrySum + (Number(entry.hours) || 0), 0), 0))
+const totalTaskHours = computed(() => filteredReports.value.reduce((sum, report) => sum + taskHours(report), 0))
 
 async function openReview() {
   open.value = true
@@ -197,7 +208,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">DAILY REPORT REVIEW</p>
         <h1 id="daily-review-title">日報確認</h1>
-        <span>月間カレンダーで勤務状況を確認し、作業内容は必要な日だけ展開できます。</span>
+        <span>月の日付を縦に並べたカレンダー形式で、日報を1日1レコードで確認します。</span>
       </div>
       <div class="daily-review-header-actions">
         <button type="button" class="action-secondary" @click="openWeeklyReport">週報出力</button>
@@ -223,64 +234,92 @@ onBeforeUnmount(() => {
         <div><span>タスク工数合計</span><strong>{{ numberLabel(totalTaskHours) }}h</strong></div>
       </div>
 
-      <div class="calendar-scroll">
-        <div class="daily-calendar">
-          <div class="calendar-weekdays" aria-hidden="true">
-            <div v-for="weekday in weekdayLabels" :key="weekday">{{ weekday }}</div>
+      <div class="schedule-scroll">
+        <div class="monthly-schedule">
+          <div class="schedule-title">{{ monthLabel() }}　日報カレンダー＆スケジュール</div>
+          <div class="schedule-header schedule-grid">
+            <div>日</div>
+            <div>曜日</div>
+            <div>状態</div>
+            <div>勤務区分</div>
+            <div>勤務時間</div>
+            <div>実労働</div>
+            <div>残業</div>
+            <div>作業内容</div>
+            <div>操作</div>
           </div>
 
-          <div class="daily-calendar-grid">
-            <section
-              v-for="day in calendarDays"
-              :key="day.key"
-              :class="['calendar-day', { 'outside-month': !day.inMonth, today: day.isToday }]"
-            >
-              <div class="calendar-day-heading">
-                <strong>{{ day.day }}</strong>
-                <span v-if="day.isToday">今日</span>
+          <section
+            v-for="day in scheduleDays"
+            :key="day.key"
+            :class="[
+              'schedule-row',
+              'schedule-grid',
+              { saturday: day.weekdayIndex === 6, sunday: day.weekdayIndex === 0, today: day.isToday },
+            ]"
+          >
+            <div class="date-cell">
+              <strong>{{ day.day }}</strong>
+              <small v-if="day.isToday">今日</small>
+            </div>
+            <div class="weekday-cell">{{ day.weekdayLabel }}</div>
+
+            <article v-if="day.report" class="daily-report-card schedule-report">
+              <header class="report-card-header">
+                <div class="compat-date" aria-hidden="true">
+                  <strong>{{ day.day }}</strong>
+                  <span>{{ day.report.date }}</span>
+                </div>
+                <div class="report-badges">
+                  <span
+                    :class="[
+                      'daily-report-state-badge',
+                      day.report.id.startsWith('DRAFT-') ? 'is-draft' : 'is-submitted',
+                    ]"
+                  >
+                    {{ day.report.id.startsWith('DRAFT-') ? '仮保存' : '登録済み' }}
+                  </span>
+                </div>
+              </header>
+
+              <div class="work-type-cell">{{ workTypeLabels[day.report.workType] }}</div>
+              <div class="work-time-cell">{{ day.report.startTime }} ～ {{ day.report.endTime }}</div>
+              <div class="actual-cell">{{ numberLabel(reportWorkHours(day.report)) }}h</div>
+              <div :class="['overtime-cell', { active: day.report.overtimeHours > 0 }]">
+                {{ numberLabel(day.report.overtimeHours) }}h
               </div>
 
-              <article v-if="day.report" class="daily-report-card">
-                <header class="report-card-header">
-                  <div class="report-title">
-                    <strong>{{ workTypeLabels[day.report.workType] }}</strong>
-                    <span>{{ day.report.date }}</span>
+              <details class="task-details">
+                <summary :title="taskTooltip(day.report)">
+                  <span>{{ taskSummary(day.report) }}</span>
+                  <strong>{{ day.report.entries.length }}件</strong>
+                </summary>
+                <div class="task-detail-panel">
+                  <div v-if="day.report.entries.length" class="task-list">
+                    <div v-for="entry in day.report.entries" :key="entry.rowId">
+                      <span :title="taskName(entry.taskId)">{{ taskName(entry.taskId) }}</span>
+                      <strong>{{ numberLabel(entry.hours) }}h</strong>
+                    </div>
                   </div>
-                  <div class="report-badges">
-                    <span v-if="day.report.overtimeHours > 0" class="overtime-badge">残業 {{ numberLabel(day.report.overtimeHours) }}h</span>
+                  <p v-else class="empty-small">作業実績はありません。</p>
+                  <div v-if="day.report.remarks" class="report-remarks">
+                    <strong>備考</strong>
+                    <p>{{ day.report.remarks }}</p>
                   </div>
-                </header>
-
-                <div class="report-compact-metrics">
-                  <span>{{ day.report.startTime }}–{{ day.report.endTime }}</span>
-                  <span>実働 {{ numberLabel(reportWorkHours(day.report)) }}h</span>
-                  <span v-if="day.report.overtimeHours > 0" class="overtime-text">残業 {{ numberLabel(day.report.overtimeHours) }}h</span>
                 </div>
+              </details>
+            </article>
 
-                <details class="report-details">
-                  <summary :title="taskTooltip(day.report)">
-                    <span>作業詳細</span>
-                    <strong>{{ day.report.entries.length }}件</strong>
-                  </summary>
-                  <div class="report-detail-body">
-                    <div v-if="day.report.entries.length" class="task-list">
-                      <div v-for="entry in day.report.entries" :key="entry.rowId">
-                        <span :title="taskName(entry.taskId)">{{ taskName(entry.taskId) }}</span>
-                        <strong>{{ numberLabel(entry.hours) }}h</strong>
-                      </div>
-                    </div>
-                    <p v-else class="empty-small">作業実績はありません。</p>
-                    <div v-if="day.report.remarks" class="report-remarks">
-                      <strong>備考</strong>
-                      <p>{{ day.report.remarks }}</p>
-                    </div>
-                  </div>
-                </details>
-              </article>
-
-              <span v-else-if="day.inMonth" class="calendar-no-report">－</span>
-            </section>
-          </div>
+            <template v-else>
+              <div class="empty-status">未登録</div>
+              <div class="empty-cell">－</div>
+              <div class="empty-cell">－</div>
+              <div class="empty-cell">－</div>
+              <div class="empty-cell">－</div>
+              <div class="empty-task">－</div>
+              <div class="empty-cell">－</div>
+            </template>
+          </section>
         </div>
       </div>
     </template>
@@ -377,214 +416,240 @@ onBeforeUnmount(() => {
 }
 .daily-review-summary span { display: block; color: #6b7f8e; font-size: 11px; }
 .daily-review-summary strong { display: block; margin-top: 3px; color: #17354d; font-size: 21px; }
-.calendar-scroll {
+.schedule-scroll {
   overflow-x: auto;
   margin-top: 16px;
-  padding-bottom: 8px;
+  padding-bottom: 10px;
 }
-.daily-calendar {
-  min-width: 980px;
-  overflow: hidden;
-  border: 1px solid #d8e1e8;
-  border-radius: 14px;
-  background: #dfe6ec;
-}
-.calendar-weekdays,
-.daily-calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 1px;
-}
-.calendar-weekdays > div {
-  padding: 9px 8px;
-  background: #edf3f7;
-  color: #60758a;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 800;
-}
-.calendar-weekdays > div:nth-child(6) { color: #3978a8; }
-.calendar-weekdays > div:nth-child(7) { color: #b14a40; }
-.calendar-day {
-  min-height: 154px;
-  padding: 8px;
+.monthly-schedule {
+  min-width: 1120px;
+  border: 1px solid #80909d;
+  border-radius: 4px;
   background: #fff;
 }
-.calendar-day.outside-month {
-  background: #f7f9fb;
-  color: #9aabba;
+.schedule-title {
+  padding: 16px 18px;
+  border-bottom: 1px solid #80909d;
+  background: #fff;
+  color: #111;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: .04em;
 }
-.calendar-day.today {
-  box-shadow: inset 0 0 0 2px #14a6b6;
+.schedule-grid {
+  display: grid;
+  grid-template-columns: 56px 56px 92px 110px 130px 90px 80px minmax(280px, 1fr) 70px;
 }
-.calendar-day-heading {
+.schedule-header {
+  background: #eef1f3;
+  color: #273a49;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+.schedule-header > div {
+  padding: 7px 6px;
+  border-right: 1px solid #9ba8b2;
+}
+.schedule-header > div:last-child { border-right: 0; }
+.schedule-row {
+  min-height: 40px;
+  border-top: 1px dotted #9aa7b1;
+  background: #fff;
+}
+.schedule-row > .date-cell,
+.schedule-row > .weekday-cell,
+.schedule-row > .empty-status,
+.schedule-row > .empty-cell,
+.schedule-row > .empty-task {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 26px;
-  margin-bottom: 5px;
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 7px;
+  border-right: 1px solid #b3bdc5;
+  font-size: 12px;
 }
-.calendar-day-heading strong {
-  color: #344f63;
-  font-size: 13px;
+.date-cell { flex-direction: column; gap: 1px; }
+.date-cell strong { font-size: 14px; }
+.date-cell small { color: #1597a6; font-size: 9px; font-weight: 800; }
+.weekday-cell { font-weight: 800; }
+.schedule-row.saturday .date-cell,
+.schedule-row.saturday .weekday-cell { color: #22669a; background: #f4f8fc; }
+.schedule-row.sunday .date-cell,
+.schedule-row.sunday .weekday-cell { color: #c43c32; background: #fff7f6; }
+.schedule-row.today { box-shadow: inset 3px 0 0 #14a6b6; }
+.schedule-report {
+  grid-column: 3 / 10;
+  display: grid;
+  grid-template-columns: 92px 110px 130px 90px 80px minmax(280px, 1fr) 70px;
+  min-width: 0;
 }
-.outside-month .calendar-day-heading strong { color: #9aabba; }
-.calendar-day-heading span {
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: #e5f7f8;
-  color: #0e7b86;
-  font-size: 9px;
-  font-weight: 800;
-}
-.daily-report-card {
-  overflow: hidden;
-  border: 1px solid #d9e3ea;
-  border-radius: 9px;
-  background: #fbfdfe;
-}
-.report-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 5px;
-  padding: 7px 8px 5px;
-}
-.report-title { min-width: 0; }
-.report-title strong {
-  display: block;
-  overflow: hidden;
-  color: #24435b;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.report-title span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+.report-card-header { display: contents; }
+.compat-date { display: none; }
+.report-badges,
+.work-type-cell,
+.work-time-cell,
+.actual-cell,
+.overtime-cell,
+.task-details {
+  min-width: 0;
+  border-right: 1px solid #b3bdc5;
 }
 .report-badges {
+  grid-column: 1;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
 }
-.report-badges span {
-  padding: 2px 5px;
+.report-badges .daily-report-state-badge {
+  padding: 4px 7px;
   border-radius: 999px;
-  background: #edf3f7;
-  color: #426078;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
   white-space: nowrap;
 }
-.report-badges .overtime-badge { background: #fff0ed; color: #ad4436; }
-.report-compact-metrics {
+.report-badges .is-draft { background: #fff4d9; color: #9a6500; }
+.report-badges .is-submitted { background: #e8f6ef; color: #28734d; }
+.work-type-cell {
+  grid-column: 2;
   display: flex;
-  flex-wrap: wrap;
-  gap: 3px 7px;
-  padding: 0 8px 6px;
-  color: #60758a;
-  font-size: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  font-size: 12px;
 }
-.report-compact-metrics .overtime-text { color: #b24533; font-weight: 800; }
-.report-details {
-  border-top: 1px solid #e8eef2;
+.work-time-cell {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: nowrap;
 }
-.report-details summary {
+.actual-cell,
+.overtime-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.actual-cell { grid-column: 4; }
+.overtime-cell { grid-column: 5; }
+.overtime-cell.active { color: #b34335; background: #fff7f5; }
+.task-details {
+  grid-column: 6;
+  position: relative;
+  padding: 0;
+}
+.task-details summary {
+  min-height: 39px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 6px 8px;
-  color: #49657b;
-  font-size: 10px;
-  font-weight: 800;
+  gap: 8px;
+  padding: 5px 10px;
   cursor: pointer;
   list-style: none;
 }
-.report-details summary::-webkit-details-marker { display: none; }
-.report-details summary::after {
-  content: '＋';
-  margin-left: auto;
-  color: #8193a2;
+.task-details summary::-webkit-details-marker { display: none; }
+.task-details summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #304b61;
+  font-size: 11px;
 }
-.report-details[open] summary::after { content: '−'; }
-.report-details summary strong {
-  padding: 1px 5px;
+.task-details summary strong {
+  flex: 0 0 auto;
+  padding: 2px 6px;
   border-radius: 999px;
-  background: #edf3f7;
-  color: #45647b;
-  font-size: 9px;
+  background: #eef4f7;
+  color: #60758a;
+  font-size: 10px;
 }
-.report-detail-body {
-  padding: 0 7px 7px;
+.task-details[open] summary { background: #f4f9fa; }
+.task-detail-panel {
+  padding: 9px 10px 10px;
+  border-top: 1px solid #dfe7ed;
+  background: #f9fbfc;
 }
-.task-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.task-list { display: grid; gap: 5px; }
 .task-list > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 5px 6px;
-  border-radius: 6px;
-  background: #f4f8fa;
-  font-size: 9px;
+  gap: 10px;
+  color: #405970;
+  font-size: 11px;
 }
-.task-list span {
+.task-list > div span {
   min-width: 0;
   overflow: hidden;
-  color: #405b70;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.task-list strong { flex: 0 0 auto; color: #17354d; }
+.task-list > div strong { flex: 0 0 auto; color: #203e56; }
 .report-remarks {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed #dce5eb;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px dashed #d6e0e7;
 }
-.report-remarks strong { color: #60758a; font-size: 9px; }
-.report-remarks p {
-  margin: 2px 0 0;
-  color: #50697c;
-  font-size: 9px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-.empty-small,
-.calendar-no-report {
-  color: #a2b0bc;
-  font-size: 10px;
-}
-.calendar-no-report { display: block; padding: 8px 2px; }
-.daily-review-loading { padding: 48px 0; text-align: center; color: #60758a; }
-.daily-review-error {
-  margin: 16px 0 0;
-  padding: 12px 14px;
-  border-radius: 9px;
-  background: #fff0ee;
-  color: #b13f32;
+.report-remarks > strong { color: #6a7e8d; font-size: 10px; }
+.report-remarks p { margin: 3px 0 0; color: #405970; font-size: 11px; white-space: pre-wrap; }
+.empty-small { margin: 0; color: #8a99a6; font-size: 11px; }
+.empty-status {
+  grid-column: 3;
+  color: #8a99a6;
   font-weight: 700;
 }
+.empty-cell { color: #a5afb7; }
+.empty-task {
+  justify-content: flex-start !important;
+  padding-left: 10px !important;
+  color: #a5afb7;
+}
+:deep(.daily-report-edit-button) {
+  grid-column: 7;
+  align-self: center;
+  justify-self: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  margin: 0;
+  border: 1px solid #cbd7e2;
+  border-radius: 7px;
+  background: #fff;
+  color: #17354d;
+  font-size: 10px;
+}
+.daily-review-loading,
+.daily-review-error {
+  margin-top: 18px;
+  padding: 28px;
+  border-radius: 12px;
+  background: #fff;
+  text-align: center;
+  color: #6b7f8e;
+}
+.daily-review-error { color: #ad4436; background: #fff5f3; }
 @media (max-width: 900px) {
-  .daily-review-page { inset-left: 0; padding: 20px 14px 36px; }
+  .daily-review-page { inset-left: 0; }
   .daily-review-header { align-items: flex-start; flex-direction: column; }
   .daily-review-header-actions { width: 100%; }
   .daily-review-header-actions button { flex: 1; }
   .daily-review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 600px) {
-  .daily-review-summary { grid-template-columns: 1fr 1fr; }
+  .daily-review-page { padding: 18px 12px 36px; }
   .daily-review-monthbar { flex-wrap: wrap; }
-  .daily-review-monthbar strong { width: 100%; margin-left: 0; }
+  .daily-review-summary { gap: 8px; }
+  .daily-review-summary > div { padding: 11px 12px; }
+  .daily-review-summary strong { font-size: 18px; }
 }
 </style>
