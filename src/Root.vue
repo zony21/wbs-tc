@@ -3,6 +3,7 @@ import App from './App.vue'
 import DailyReportNavigationBridge from './DailyReportNavigationBridge.vue'
 import DailyReportReviewPage from './DailyReportReviewPage.vue'
 import WeeklyReportTool from './WeeklyReportTool.vue'
+import WeeklyReportYearlessView from './WeeklyReportYearlessView.vue'
 import DailyReportValidationGuard from './DailyReportValidationGuard.vue'
 import ScheduleTaskEnhancer from './ScheduleTaskEnhancer.vue'
 import SectionEditTool from './SectionEditTool.vue'
@@ -16,6 +17,7 @@ import RegistrationFeedbackTool from './RegistrationFeedbackTool.vue'
   <DailyReportNavigationBridge />
   <DailyReportReviewPage />
   <WeeklyReportTool />
+  <WeeklyReportYearlessView />
   <DailyReportValidationGuard />
   <ScheduleTaskEnhancer />
   <SectionEditTool />
