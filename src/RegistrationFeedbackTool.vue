@@ -19,11 +19,6 @@ function readStorage() {
   return localStorage.getItem(STORAGE_KEY) || ''
 }
 
-function successFlashVisible() {
-  const text = document.querySelector<HTMLElement>('.flash')?.textContent?.trim() || ''
-  return /(追加|登録|更新)しました/.test(text)
-}
-
 function classifyButton(button: HTMLButtonElement): SuccessState | null {
   const text = button.textContent?.trim() || ''
 
@@ -92,8 +87,8 @@ function handleClick(event: MouseEvent) {
   if (pendingTimer) window.clearTimeout(pendingTimer)
   pendingTimer = window.setTimeout(() => {
     const after = readStorage()
-    if (after !== before || successFlashVisible()) success.value = candidate
-  }, 120)
+    if (after !== before) success.value = candidate
+  }, 160)
 }
 
 function restorePendingSuccess() {
@@ -130,12 +125,12 @@ function returnToList() {
 }
 
 onMounted(() => {
-  document.addEventListener('click', handleClick)
+  document.addEventListener('click', handleClick, true)
   restorePendingSuccess()
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClick)
+  document.removeEventListener('click', handleClick, true)
   if (pendingTimer) window.clearTimeout(pendingTimer)
   if (pendingSessionTimer) window.clearTimeout(pendingSessionTimer)
 })
