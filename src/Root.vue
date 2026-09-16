@@ -10,6 +10,7 @@ import SectionEditTool from './SectionEditTool.vue'
 import DailyDraftEditTool from './DailyDraftEditTool.vue'
 import DailyReportCopyTool from './DailyReportCopyTool.vue'
 import RegistrationFeedbackTool from './RegistrationFeedbackTool.vue'
+import ViewportLayoutGuard from './ViewportLayoutGuard.vue'
 </script>
 
 <template>
@@ -24,4 +25,5 @@ import RegistrationFeedbackTool from './RegistrationFeedbackTool.vue'
   <DailyDraftEditTool />
   <DailyReportCopyTool />
   <RegistrationFeedbackTool />
+  <ViewportLayoutGuard />
 </template>
