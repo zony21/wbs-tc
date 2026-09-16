@@ -4,8 +4,16 @@ import { computed, reactive, ref, watch } from 'vue'
 type ViewName = 'dashboard' | 'wbs' | 'daily'
 type WorkType = 'normal' | 'staggered' | 'remote' | 'other'
 
+interface Project {
+  id: string
+  name: string
+  startDate: string
+  dueDate: string
+}
+
 interface Section {
   id: string
+  projectId: string
   name: string
   startDate: string
   dueDate: string
@@ -42,6 +50,7 @@ interface DailyReport {
 }
 
 interface AppState {
+  projects: Project[]
   sections: Section[]
   tasks: WbsTask[]
   reports: DailyReport[]
@@ -50,21 +59,22 @@ interface AppState {
 const STORAGE_KEY = 'wbs-tc-state-v1'
 
 const seedState: AppState = {
+  projects: [
+    { id: 'P-001', name: '案件名未設定', startDate: '2026-07-01', dueDate: '2027-05-31' },
+  ],
   sections: [
-    { id: 'S-01', name: '要件定義', startDate: '2026-09-01', dueDate: '2026-09-25' },
-    { id: 'S-02', name: '基本設計', startDate: '2026-09-26', dueDate: '2026-10-23' },
-    { id: 'S-03', name: '開発', startDate: '2026-10-24', dueDate: '2026-11-20' },
-    { id: 'S-04', name: 'テスト', startDate: '2026-11-07', dueDate: '2026-11-27' },
+    { id: 'S-001', projectId: 'P-001', name: '要件定義', startDate: '2026-08-01', dueDate: '2026-09-30' },
+    { id: 'S-002', projectId: 'P-001', name: '基本設計', startDate: '2026-09-01', dueDate: '2026-10-31' },
+    { id: 'S-003', projectId: 'P-001', name: '詳細設計', startDate: '2026-11-01', dueDate: '2026-12-31' },
+    { id: 'S-004', projectId: 'P-001', name: '製造・単体テスト', startDate: '2026-12-01', dueDate: '2027-02-28' },
+    { id: 'S-005', projectId: 'P-001', name: '社内結合テスト', startDate: '2027-02-01', dueDate: '2027-03-31' },
+    { id: 'S-006', projectId: 'P-001', name: '機器設置・疎通確認', startDate: '2026-12-01', dueDate: '2027-03-31' },
+    { id: 'S-007', projectId: 'P-001', name: '現地テスト', startDate: '2027-03-01', dueDate: '2027-04-30' },
+    { id: 'S-008', projectId: 'P-001', name: '稼働立会い', startDate: '2027-05-01', dueDate: '2027-05-31' },
+    { id: 'S-009', projectId: 'P-001', name: 'マシンセットアップ', startDate: '2027-03-01', dueDate: '2027-03-31' },
+    { id: 'S-010', projectId: 'P-001', name: '完成図書作成', startDate: '2027-04-01', dueDate: '2027-04-30' },
   ],
-  tasks: [
-    { id: 'T-001', sectionId: 'S-01', parentId: null, name: '搬送要件整理', category: '要件定義', startDate: '2026-09-01', dueDate: '2026-09-12', progress: 100, assignees: ['田中', '佐藤'] },
-    { id: 'T-002', sectionId: 'S-01', parentId: 'T-001', name: '搬送パターン整理', category: '要件定義', startDate: '2026-09-01', dueDate: '2026-09-08', progress: 100, assignees: ['田中'] },
-    { id: 'T-003', sectionId: 'S-01', parentId: 'T-001', name: 'QA整理', category: '要件定義', startDate: '2026-09-05', dueDate: '2026-09-12', progress: 100, assignees: ['佐藤'] },
-    { id: 'T-004', sectionId: 'S-01', parentId: null, name: '画面要件整理', category: '要件定義', startDate: '2026-09-10', dueDate: '2026-09-25', progress: 60, assignees: ['鈴木', '田中'] },
-    { id: 'T-005', sectionId: 'S-01', parentId: 'T-004', name: '操作画面レイアウト', category: '要件定義', startDate: '2026-09-10', dueDate: '2026-09-18', progress: 80, assignees: ['鈴木'] },
-    { id: 'T-006', sectionId: 'S-02', parentId: null, name: 'DB設計', category: '基本設計', startDate: '2026-09-26', dueDate: '2026-10-09', progress: 25, assignees: ['田中', '山田'] },
-    { id: 'T-007', sectionId: 'S-02', parentId: null, name: '画面基本設計', category: '基本設計', startDate: '2026-10-01', dueDate: '2026-10-16', progress: 10, assignees: ['鈴木', '佐藤'] },
-  ],
+  tasks: [],
   reports: [],
 }
 
@@ -72,13 +82,31 @@ function cloneSeed(): AppState {
   return JSON.parse(JSON.stringify(seedState)) as AppState
 }
 
+function normalizeLoadedState(parsed: Partial<AppState>): AppState {
+  if (!Array.isArray(parsed.sections) || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.reports)) return cloneSeed()
+
+  const rawSections = parsed.sections as Array<Section & { projectId?: string }>
+  let projects = Array.isArray(parsed.projects) ? parsed.projects : []
+  if (!projects.length) {
+    const starts = rawSections.map((section) => section.startDate).filter(Boolean).sort()
+    const ends = rawSections.map((section) => section.dueDate).filter(Boolean).sort()
+    projects = [{ id: 'P-001', name: '既存案件', startDate: starts[0] || '2026-01-01', dueDate: ends.at(-1) || '2026-12-31' }]
+  }
+  const fallbackProjectId = projects[0].id
+
+  return {
+    projects,
+    sections: rawSections.map((section) => ({ ...section, projectId: section.projectId || fallbackProjectId })),
+    tasks: parsed.tasks,
+    reports: parsed.reports,
+  }
+}
+
 function loadState(): AppState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (!saved) return cloneSeed()
-    const parsed = JSON.parse(saved) as AppState
-    if (!Array.isArray(parsed.sections) || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.reports)) return cloneSeed()
-    return parsed
+    return normalizeLoadedState(JSON.parse(saved) as Partial<AppState>)
   } catch {
     return cloneSeed()
   }
@@ -88,8 +116,18 @@ const state = reactive<AppState>(loadState())
 watch(state, () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state)), { deep: true })
 
 const currentView = ref<ViewName>('dashboard')
+const activeProjectId = ref(state.projects[0]?.id || '')
 const flashMessage = ref('')
 const formError = ref('')
+
+const currentProject = computed(() => state.projects.find((project) => project.id === activeProjectId.value) ?? state.projects[0] ?? null)
+const projectSections = computed(() => state.sections.filter((section) => section.projectId === currentProject.value?.id))
+const projectSectionIds = computed(() => new Set(projectSections.value.map((section) => section.id)))
+const projectTasks = computed(() => state.tasks.filter((task) => projectSectionIds.value.has(task.sectionId)))
+
+watch(() => state.projects.map((project) => project.id).join('|'), () => {
+  if (!state.projects.some((project) => project.id === activeProjectId.value)) activeProjectId.value = state.projects[0]?.id || ''
+})
 
 function showMessage(message: string) {
   flashMessage.value = message
@@ -108,6 +146,15 @@ function nextId(prefix: string, ids: string[]) {
     return Number.isFinite(numeric) ? Math.max(value, numeric) : value
   }, 0)
   return `${prefix}-${String(max + 1).padStart(3, '0')}`
+}
+
+function projectForSection(sectionId: string) {
+  const section = state.sections.find((candidate) => candidate.id === sectionId)
+  return state.projects.find((project) => project.id === section?.projectId)
+}
+
+function projectForTask(task: WbsTask | undefined) {
+  return task ? projectForSection(task.sectionId) : undefined
 }
 
 function parentTasks(sectionId: string) {
@@ -130,13 +177,13 @@ function sectionProgress(sectionId: string) {
 }
 
 const overallProgress = computed(() => {
-  if (!state.sections.length) return 0
-  return Math.round(state.sections.reduce((sum, section) => sum + sectionProgress(section.id), 0) / state.sections.length)
+  if (!projectSections.value.length) return 0
+  return Math.round(projectSections.value.reduce((sum, section) => sum + sectionProgress(section.id), 0) / projectSections.value.length)
 })
 
-const totalTaskCount = computed(() => state.tasks.length)
-const completedTaskCount = computed(() => state.tasks.filter((task) => task.progress === 100).length)
-const inProgressTaskCount = computed(() => state.tasks.filter((task) => task.progress > 0 && task.progress < 100).length)
+const totalTaskCount = computed(() => projectTasks.value.length)
+const completedTaskCount = computed(() => projectTasks.value.filter((task) => task.progress === 100).length)
+const inProgressTaskCount = computed(() => projectTasks.value.filter((task) => task.progress > 0 && task.progress < 100).length)
 
 function dateNumber(value: string) {
   const [year, month, day] = value.split('-').map(Number)
@@ -144,13 +191,15 @@ function dateNumber(value: string) {
 }
 
 const scheduleStart = computed(() => {
-  if (!state.sections.length) return Date.now()
-  return Math.min(...state.sections.map((section) => dateNumber(section.startDate)))
+  if (currentProject.value?.startDate) return dateNumber(currentProject.value.startDate)
+  if (!projectSections.value.length) return Date.now()
+  return Math.min(...projectSections.value.map((section) => dateNumber(section.startDate)))
 })
 
 const scheduleEnd = computed(() => {
-  if (!state.sections.length) return Date.now() + 86400000
-  return Math.max(...state.sections.map((section) => dateNumber(section.dueDate)))
+  if (currentProject.value?.dueDate) return dateNumber(currentProject.value.dueDate)
+  if (!projectSections.value.length) return Date.now() + 86400000
+  return Math.max(...projectSections.value.map((section) => dateNumber(section.dueDate)))
 })
 
 function scheduleStyle(section: Section) {
@@ -158,15 +207,80 @@ function scheduleStyle(section: Section) {
   const total = Math.max(scheduleEnd.value - start, 86400000)
   const left = ((dateNumber(section.startDate) - start) / total) * 100
   const width = Math.max(((dateNumber(section.dueDate) - dateNumber(section.startDate) + 86400000) / total) * 100, 2)
-  return { left: `${Math.max(0, left)}%`, width: `${Math.min(100 - left, width)}%` }
+  return { left: `${Math.max(0, left)}%`, width: `${Math.min(100 - Math.max(0, left), width)}%` }
+}
+
+const showProjectForm = ref(false)
+const editingProject = ref<Project | null>(null)
+const projectForm = reactive({ name: '', startDate: '', dueDate: '' })
+
+function openProjectForm() {
+  Object.assign(projectForm, { name: '', startDate: '', dueDate: '' })
+  formError.value = ''
+  showProjectForm.value = true
+}
+
+function addProject() {
+  formError.value = ''
+  if (!projectForm.name.trim() || !projectForm.startDate || !projectForm.dueDate) {
+    formError.value = '案件名・開始日・終了日を入力してください。'
+    return
+  }
+  if (projectForm.startDate > projectForm.dueDate) {
+    formError.value = '終了日は開始日以降を指定してください。'
+    return
+  }
+  const project: Project = {
+    id: nextId('P', state.projects.map((item) => item.id)),
+    name: projectForm.name.trim(),
+    startDate: projectForm.startDate,
+    dueDate: projectForm.dueDate,
+  }
+  state.projects.push(project)
+  activeProjectId.value = project.id
+  showProjectForm.value = false
+  showMessage('案件を追加しました。')
+}
+
+function openProjectEdit() {
+  if (!currentProject.value) return
+  editingProject.value = JSON.parse(JSON.stringify(currentProject.value)) as Project
+  formError.value = ''
+}
+
+function saveProjectEdit() {
+  if (!editingProject.value) return
+  if (!editingProject.value.name.trim() || !editingProject.value.startDate || !editingProject.value.dueDate) {
+    formError.value = '案件名・開始日・終了日を入力してください。'
+    return
+  }
+  if (editingProject.value.startDate > editingProject.value.dueDate) {
+    formError.value = '終了日は開始日以降を指定してください。'
+    return
+  }
+  const target = state.projects.find((project) => project.id === editingProject.value?.id)
+  if (!target) return
+  Object.assign(target, editingProject.value, { name: editingProject.value.name.trim() })
+  editingProject.value = null
+  showMessage('案件情報を更新しました。')
 }
 
 const showSectionForm = ref(false)
 const newSection = reactive({ name: '', startDate: '', dueDate: '' })
 
+function openSectionForm() {
+  formError.value = ''
+  if (!currentProject.value) {
+    formError.value = '先に案件を作成してください。'
+    return
+  }
+  Object.assign(newSection, { name: '', startDate: currentProject.value.startDate, dueDate: currentProject.value.dueDate })
+  showSectionForm.value = true
+}
+
 function addSection() {
   formError.value = ''
-  if (!newSection.name.trim() || !newSection.startDate || !newSection.dueDate) {
+  if (!currentProject.value || !newSection.name.trim() || !newSection.startDate || !newSection.dueDate) {
     formError.value = 'セクション名・開始日・期限を入力してください。'
     return
   }
@@ -174,17 +288,33 @@ function addSection() {
     formError.value = '期限は開始日以降を指定してください。'
     return
   }
-  state.sections.push({ id: nextId('S', state.sections.map((section) => section.id)), name: newSection.name.trim(), startDate: newSection.startDate, dueDate: newSection.dueDate })
-  Object.assign(newSection, { name: '', startDate: '', dueDate: '' })
+  state.sections.push({
+    id: nextId('S', state.sections.map((section) => section.id)),
+    projectId: currentProject.value.id,
+    name: newSection.name.trim(),
+    startDate: newSection.startDate,
+    dueDate: newSection.dueDate,
+  })
   showSectionForm.value = false
-  showMessage('セクションを追加しました。')
+  showMessage('大日程フェーズを追加しました。')
 }
 
 const showTaskForm = ref(false)
 const newTask = reactive({ sectionId: '', kind: 'parent' as 'parent' | 'child', parentId: '', name: '', category: '', startDate: '', dueDate: '', progress: 0, assigneesText: '' })
 
 function openTaskForm(sectionId?: string) {
-  Object.assign(newTask, { sectionId: sectionId ?? state.sections[0]?.id ?? '', kind: 'parent', parentId: '', name: '', category: '', startDate: '', dueDate: '', progress: 0, assigneesText: '' })
+  const defaultSection = sectionId ? projectSections.value.find((section) => section.id === sectionId) : projectSections.value[0]
+  Object.assign(newTask, {
+    sectionId: defaultSection?.id ?? '',
+    kind: 'parent',
+    parentId: '',
+    name: '',
+    category: defaultSection?.name ?? '',
+    startDate: defaultSection?.startDate ?? '',
+    dueDate: defaultSection?.dueDate ?? '',
+    progress: 0,
+    assigneesText: '',
+  })
   formError.value = ''
   showTaskForm.value = true
 }
@@ -193,7 +323,11 @@ function addTask() {
   formError.value = ''
   const assignees = newTask.assigneesText.split(',').map((name) => name.trim()).filter(Boolean)
   if (!newTask.sectionId || !newTask.name.trim() || !newTask.category.trim() || !newTask.startDate || !newTask.dueDate) {
-    formError.value = 'セクション・名称・カテゴリ・開始日・期限を入力してください。'
+    formError.value = 'フェーズ・名称・カテゴリ・開始日・期限を入力してください。'
+    return
+  }
+  if (!projectSections.value.some((section) => section.id === newTask.sectionId)) {
+    formError.value = '現在の案件に属するフェーズを選択してください。'
     return
   }
   if (newTask.startDate > newTask.dueDate) {
@@ -321,19 +455,23 @@ function removeDailyEntry(rowId: string) {
 }
 
 const taskPickerRowId = ref<string | null>(null)
-const taskSearch = reactive({ name: '', category: '', id: '' })
+const taskSearch = reactive({ name: '', category: '', id: '', projectId: '' })
 const taskCategories = computed(() => [...new Set(state.tasks.map((task) => task.category))].sort())
 const filteredTasks = computed(() => {
   const name = taskSearch.name.trim().toLowerCase()
   const id = taskSearch.id.trim().toLowerCase()
   return state.tasks.filter((task) => {
-    return (!name || task.name.toLowerCase().includes(name)) && (!id || task.id.toLowerCase().includes(id)) && (!taskSearch.category || task.category === taskSearch.category)
+    const project = projectForTask(task)
+    return (!name || task.name.toLowerCase().includes(name))
+      && (!id || task.id.toLowerCase().includes(id))
+      && (!taskSearch.category || task.category === taskSearch.category)
+      && (!taskSearch.projectId || project?.id === taskSearch.projectId)
   })
 })
 
 function openTaskPicker(rowId: string) {
   taskPickerRowId.value = rowId
-  Object.assign(taskSearch, { name: '', category: '', id: '' })
+  Object.assign(taskSearch, { name: '', category: '', id: '', projectId: currentProject.value?.id || '' })
 }
 
 function selectTask(taskId: string) {
@@ -399,11 +537,13 @@ function reportWorkHours(report: DailyReport) {
 
 function resetAllData() {
   const fresh = cloneSeed()
+  state.projects = fresh.projects
   state.sections = fresh.sections
   state.tasks = fresh.tasks
   state.reports = fresh.reports
+  activeProjectId.value = fresh.projects[0]?.id || ''
   resetDailyForm()
-  showMessage('サンプルデータに戻しました。')
+  showMessage('初期大日程に戻しました。')
 }
 </script>
 
@@ -417,12 +557,24 @@ function resetAllData() {
           <small>Project control</small>
         </div>
       </div>
+
+      <div class="project-switcher">
+        <span>案件</span>
+        <select v-model="activeProjectId" aria-label="案件を選択">
+          <option v-for="project in state.projects" :key="project.id" :value="project.id">{{ project.name }}</option>
+        </select>
+        <div class="project-switcher-actions">
+          <button type="button" @click="openProjectForm">＋ 案件</button>
+          <button v-if="currentProject" type="button" @click="openProjectEdit">編集</button>
+        </div>
+      </div>
+
       <nav class="nav-list" aria-label="メインメニュー">
         <button :class="{ active: currentView === 'dashboard' }" @click="currentView = 'dashboard'">ダッシュボード</button>
         <button :class="{ active: currentView === 'wbs' }" @click="currentView = 'wbs'">WBS管理</button>
-        <button :class="{ active: currentView === 'daily' }" @click="currentView = 'daily'">日報登録</button>
+        <button :class="{ active: currentView === 'daily' }" @click="currentView = 'daily'">日報確認</button>
       </nav>
-      <button class="ghost-button reset-button" @click="resetAllData">サンプルデータへ戻す</button>
+      <button class="ghost-button reset-button" @click="resetAllData">初期データへ戻す</button>
     </aside>
 
     <main class="main-content">
@@ -430,11 +582,21 @@ function resetAllData() {
         <div>
           <p class="eyebrow">WBS MANAGEMENT</p>
           <h1>{{ currentView === 'dashboard' ? 'プロジェクト状況' : currentView === 'wbs' ? 'WBS管理' : '日報登録' }}</h1>
+          <p v-if="currentProject" class="project-context"><strong>{{ currentProject.name }}</strong><span>{{ currentProject.startDate }} ～ {{ currentProject.dueDate }}</span></p>
         </div>
         <div v-if="flashMessage" class="flash" role="status">{{ flashMessage }}</div>
       </header>
 
       <section v-if="currentView === 'dashboard'" class="stack-lg">
+        <article v-if="currentProject" class="panel project-overview">
+          <div>
+            <p class="eyebrow">PROJECT</p>
+            <h2>{{ currentProject.name }}</h2>
+            <span>{{ currentProject.id }} ／ {{ currentProject.startDate }} ～ {{ currentProject.dueDate }}</span>
+          </div>
+          <button class="secondary-button" @click="openProjectEdit">案件情報を編集</button>
+        </article>
+
         <div class="summary-grid">
           <article class="metric-card"><span>全体進捗</span><strong>{{ overallProgress }}%</strong><div class="progress-track"><i :style="{ width: `${overallProgress}%` }"></i></div></article>
           <article class="metric-card"><span>全タスク</span><strong>{{ totalTaskCount }}</strong><small>件</small></article>
@@ -444,19 +606,21 @@ function resetAllData() {
 
         <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">MASTER SCHEDULE</p><h2>大日程</h2></div><button class="secondary-button" @click="currentView = 'wbs'">WBSを開く</button></div>
+          <p class="schedule-note">初期大日程は提供画像のフェーズ名・月単位の期間のみを反映し、要員情報は含めていません。</p>
           <div class="schedule-axis"><span>{{ new Date(scheduleStart).toLocaleDateString('ja-JP') }}</span><span>{{ new Date(scheduleEnd).toLocaleDateString('ja-JP') }}</span></div>
           <div class="schedule-list">
-            <div v-for="section in state.sections" :key="section.id" class="schedule-row">
+            <div v-for="section in projectSections" :key="section.id" class="schedule-row">
               <div class="schedule-label"><strong>{{ section.id }}</strong><span>{{ section.name }}</span></div>
               <div class="schedule-lane"><div class="schedule-bar" :style="scheduleStyle(section)"><span>{{ sectionProgress(section.id) }}%</span></div></div>
             </div>
+            <p v-if="!projectSections.length" class="empty-cell">この案件には大日程がありません。</p>
           </div>
         </article>
 
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">SECTION PROGRESS</p><h2>セクション進捗</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">SECTION PROGRESS</p><h2>フェーズ進捗</h2></div></div>
           <div class="progress-chart">
-            <div v-for="section in state.sections" :key="section.id" class="progress-chart-row">
+            <div v-for="section in projectSections" :key="section.id" class="progress-chart-row">
               <div class="progress-chart-label"><span>{{ section.name }}</span><strong>{{ sectionProgress(section.id) }}%</strong></div>
               <div class="progress-track large"><i :style="{ width: `${sectionProgress(section.id)}%` }"></i></div>
             </div>
@@ -466,11 +630,11 @@ function resetAllData() {
 
       <section v-else-if="currentView === 'wbs'" class="stack-lg">
         <div class="toolbar">
-          <div><p>セクション → 親タスク → 子タスクの階層で管理します。</p></div>
-          <div class="toolbar-actions"><button class="secondary-button" @click="showSectionForm = true">＋ セクション</button><button class="primary-button" @click="openTaskForm()">＋ タスク</button></div>
+          <div><strong>{{ currentProject?.name || '案件未選択' }}</strong><p>案件 → 大日程フェーズ → 親タスク → 子タスクの階層で管理します。</p></div>
+          <div class="toolbar-actions"><button class="secondary-button" @click="openSectionForm">＋ 大日程フェーズ</button><button class="primary-button" @click="openTaskForm()">＋ タスク</button></div>
         </div>
 
-        <article v-for="section in state.sections" :key="section.id" class="panel section-panel">
+        <article v-for="section in projectSections" :key="section.id" class="panel section-panel">
           <div class="section-heading">
             <div><p class="eyebrow">{{ section.id }}</p><h2>{{ section.name }}</h2><p class="muted">{{ section.startDate }} ～ {{ section.dueDate }}</p></div>
             <div class="section-progress"><strong>{{ sectionProgress(section.id) }}%</strong><span>進捗</span><button class="text-button" @click="openTaskForm(section.id)">タスク追加</button></div>
@@ -494,6 +658,7 @@ function resetAllData() {
             </table>
           </div>
         </article>
+        <article v-if="!projectSections.length" class="panel empty-project"><h2>大日程がありません</h2><p>「＋ 大日程フェーズ」からこの案件の工程を追加してください。</p></article>
       </section>
 
       <section v-else class="daily-layout">
@@ -521,7 +686,7 @@ function resetAllData() {
             <div class="panel-heading"><div><p class="eyebrow">WORK LOG</p><h2>作業実績</h2></div><button class="secondary-button" @click="addDailyEntry">＋ 作業追加</button></div>
             <div class="daily-entries">
               <div v-for="entry in daily.entries" :key="entry.rowId" class="daily-entry">
-                <div class="task-field"><span class="field-label">タスク</span><button class="task-picker-button" @click="openTaskPicker(entry.rowId)"><template v-if="taskById(entry.taskId)"><strong>{{ taskById(entry.taskId)?.id }}</strong><span>{{ taskById(entry.taskId)?.name }}</span><small>{{ taskById(entry.taskId)?.category }}</small></template><template v-else><span>タスクを選択</span><small>名前・カテゴリ・IDから検索</small></template></button></div>
+                <div class="task-field"><span class="field-label">タスク</span><button class="task-picker-button" @click="openTaskPicker(entry.rowId)"><template v-if="taskById(entry.taskId)"><strong>{{ taskById(entry.taskId)?.id }}</strong><span>{{ taskById(entry.taskId)?.name }}</span><small>{{ projectForTask(taskById(entry.taskId))?.name }} ／ {{ taskById(entry.taskId)?.category }}</small></template><template v-else><span>タスクを選択</span><small>案件・名前・カテゴリ・IDから検索</small></template></button></div>
                 <label class="hours-field"><span>作業時間</span><div class="input-unit"><input v-model.number="entry.hours" type="number" min="0" step="0.25"><em>時間</em></div></label>
                 <button class="icon-button danger-text" aria-label="作業行を削除" @click="removeDailyEntry(entry.rowId)">削除</button>
               </div>
@@ -547,12 +712,20 @@ function resetAllData() {
       </section>
     </main>
 
+    <div v-if="showProjectForm" class="modal-backdrop" @click.self="showProjectForm = false">
+      <form class="modal" @submit.prevent="addProject"><div class="modal-heading"><h2>案件追加</h2><button type="button" @click="showProjectForm = false">×</button></div><div class="form-grid"><label><span>案件名</span><input v-model="projectForm.name" placeholder="例：○○工場 搬送自動化"></label><label><span>開始日</span><input v-model="projectForm.startDate" type="date"></label><label><span>終了日</span><input v-model="projectForm.dueDate" type="date"></label></div><p v-if="formError" class="error-message">{{ formError }}</p><div class="form-actions"><button type="button" class="secondary-button" @click="showProjectForm = false">キャンセル</button><button class="primary-button">追加</button></div></form>
+    </div>
+
+    <div v-if="editingProject" class="modal-backdrop" @click.self="editingProject = null">
+      <form class="modal" @submit.prevent="saveProjectEdit"><div class="modal-heading"><h2>案件情報を編集</h2><button type="button" @click="editingProject = null">×</button></div><div class="form-grid"><label><span>案件名</span><input v-model="editingProject.name"></label><label><span>開始日</span><input v-model="editingProject.startDate" type="date"></label><label><span>終了日</span><input v-model="editingProject.dueDate" type="date"></label></div><p v-if="formError" class="error-message">{{ formError }}</p><div class="form-actions"><button type="button" class="secondary-button" @click="editingProject = null">キャンセル</button><button class="primary-button">保存</button></div></form>
+    </div>
+
     <div v-if="showSectionForm" class="modal-backdrop" @click.self="showSectionForm = false">
-      <form class="modal" @submit.prevent="addSection"><div class="modal-heading"><h2>セクション追加</h2><button type="button" @click="showSectionForm = false">×</button></div><div class="form-grid"><label><span>名称</span><input v-model="newSection.name" placeholder="例：詳細設計"></label><label><span>開始日</span><input v-model="newSection.startDate" type="date"></label><label><span>期限</span><input v-model="newSection.dueDate" type="date"></label></div><p v-if="formError" class="error-message">{{ formError }}</p><div class="form-actions"><button type="button" class="secondary-button" @click="showSectionForm = false">キャンセル</button><button class="primary-button">追加</button></div></form>
+      <form class="modal" @submit.prevent="addSection"><div class="modal-heading"><div><p class="eyebrow">{{ currentProject?.name }}</p><h2>大日程フェーズ追加</h2></div><button type="button" @click="showSectionForm = false">×</button></div><div class="form-grid"><label><span>フェーズ名</span><input v-model="newSection.name" placeholder="例：詳細設計"></label><label><span>開始日</span><input v-model="newSection.startDate" type="date"></label><label><span>期限</span><input v-model="newSection.dueDate" type="date"></label></div><p v-if="formError" class="error-message">{{ formError }}</p><div class="form-actions"><button type="button" class="secondary-button" @click="showSectionForm = false">キャンセル</button><button class="primary-button">追加</button></div></form>
     </div>
 
     <div v-if="showTaskForm" class="modal-backdrop" @click.self="showTaskForm = false">
-      <form class="modal wide" @submit.prevent="addTask"><div class="modal-heading"><h2>タスク追加</h2><button type="button" @click="showTaskForm = false">×</button></div><div class="form-grid two"><label><span>セクション</span><select v-model="newTask.sectionId"><option v-for="section in state.sections" :key="section.id" :value="section.id">{{ section.id }}｜{{ section.name }}</option></select></label><label><span>階層</span><select v-model="newTask.kind"><option value="parent">親タスク</option><option value="child">子タスク</option></select></label><label v-if="newTask.kind === 'child'"><span>親タスク</span><select v-model="newTask.parentId"><option value="">選択してください</option><option v-for="task in parentTasks(newTask.sectionId)" :key="task.id" :value="task.id">{{ task.id }}｜{{ task.name }}</option></select></label><label><span>タスク名</span><input v-model="newTask.name"></label><label><span>カテゴリ</span><input v-model="newTask.category" placeholder="例：基本設計"></label><label><span>開始日</span><input v-model="newTask.startDate" type="date"></label><label><span>期限</span><input v-model="newTask.dueDate" type="date"></label><label><span>進捗</span><div class="input-unit"><input v-model.number="newTask.progress" type="number" min="0" max="100"><em>%</em></div></label><label class="full"><span>担当者 {{ newTask.kind === 'parent' ? '（複数可・カンマ区切り）' : '（1名）' }}</span><input v-model="newTask.assigneesText" placeholder="例：田中, 佐藤"></label></div><p v-if="formError" class="error-message">{{ formError }}</p><div class="form-actions"><button type="button" class="secondary-button" @click="showTaskForm = false">キャンセル</button><button class="primary-button">追加</button></div></form>
+      <form class="modal wide" @submit.prevent="addTask"><div class="modal-heading"><div><p class="eyebrow">{{ currentProject?.name }}</p><h2>タスク追加</h2></div><button type="button" @click="showTaskForm = false">×</button></div><div class="form-grid two"><label><span>大日程フェーズ</span><select v-model="newTask.sectionId"><option value="">選択してください</option><option v-for="section in projectSections" :key="section.id" :value="section.id">{{ section.id }}｜{{ section.name }}</option></select></label><label><span>階層</span><select v-model="newTask.kind"><option value="parent">親タスク</option><option value="child">子タスク</option></select></label><label v-if="newTask.kind === 'child'"><span>親タスク</span><select v-model="newTask.parentId"><option value="">選択してください</option><option v-for="task in parentTasks(newTask.sectionId)" :key="task.id" :value="task.id">{{ task.id }}｜{{ task.name }}</option></select></label><label><span>タスク名</span><input v-model="newTask.name"></label><label><span>カテゴリ</span><input v-model="newTask.category" placeholder="例：基本設計"></label><label><span>開始日</span><input v-model="newTask.startDate" type="date"></label><label><span>期限</span><input v-model="newTask.dueDate" type="date"></label><label><span>進捗</span><div class="input-unit"><input v-model.number="newTask.progress" type="number" min="0" max="100"><em>%</em></div></label><label class="full"><span>担当者 {{ newTask.kind === 'parent' ? '（複数可・カンマ区切り）' : '（1名）' }}</span><input v-model="newTask.assigneesText" placeholder="例：田中, 佐藤"></label></div><p v-if="formError" class="error-message">{{ formError }}</p><div class="form-actions"><button type="button" class="secondary-button" @click="showTaskForm = false">キャンセル</button><button class="primary-button">追加</button></div></form>
     </div>
 
     <div v-if="editingTask" class="modal-backdrop" @click.self="editingTask = null">
@@ -560,7 +733,36 @@ function resetAllData() {
     </div>
 
     <div v-if="taskPickerRowId" class="modal-backdrop" @click.self="taskPickerRowId = null">
-      <div class="modal task-picker"><div class="modal-heading"><div><p class="eyebrow">TASK SEARCH</p><h2>タスク選択</h2></div><button @click="taskPickerRowId = null">×</button></div><div class="search-grid"><label><span>名前検索</span><input v-model="taskSearch.name" placeholder="タスク名"></label><label><span>カテゴリ検索</span><select v-model="taskSearch.category"><option value="">すべて</option><option v-for="category in taskCategories" :key="category" :value="category">{{ category }}</option></select></label><label><span>ID検索</span><input v-model="taskSearch.id" placeholder="T-001"></label></div><div class="task-result-list"><button v-for="task in filteredTasks" :key="task.id" @click="selectTask(task.id)"><div><strong>{{ task.id }}</strong><span>{{ task.name }}</span></div><small>{{ task.category }} ／ {{ task.assignees.join('、') }}</small></button><p v-if="!filteredTasks.length" class="empty-cell">条件に一致するタスクがありません。</p></div></div>
+      <div class="modal task-picker"><div class="modal-heading"><div><p class="eyebrow">TASK SEARCH</p><h2>タスク選択</h2></div><button @click="taskPickerRowId = null">×</button></div><div class="search-grid project-task-search"><label><span>案件</span><select v-model="taskSearch.projectId"><option value="">すべて</option><option v-for="project in state.projects" :key="project.id" :value="project.id">{{ project.name }}</option></select></label><label><span>名前検索</span><input v-model="taskSearch.name" placeholder="タスク名"></label><label><span>カテゴリ</span><select v-model="taskSearch.category"><option value="">すべて</option><option v-for="category in taskCategories" :key="category" :value="category">{{ category }}</option></select></label><label><span>ID検索</span><input v-model="taskSearch.id" placeholder="T-001"></label></div><div class="task-result-list"><button v-for="task in filteredTasks" :key="task.id" @click="selectTask(task.id)"><div><strong>{{ task.id }}</strong><span>{{ task.name }}</span></div><small>{{ projectForTask(task)?.name }} ／ {{ task.category }} ／ {{ task.assignees.join('、') }}</small></button><p v-if="!filteredTasks.length" class="empty-cell">条件に一致するタスクがありません。</p></div></div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.project-switcher {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+}
+.project-switcher > span { color: #afc0cb; font-size: 11px; font-weight: 700; }
+.project-switcher select { min-height: 38px; padding: 7px 9px; border-color: rgba(255,255,255,.18); background: #fff; color: #17354d; }
+.project-switcher-actions { display: flex; gap: 6px; }
+.project-switcher-actions button { flex: 1; min-height: 32px; border: 1px solid rgba(255,255,255,.2); border-radius: 7px; background: transparent; color: #dbe5eb; font-size: 11px; }
+.project-context { display: flex; gap: 10px; margin: 7px 0 0; color: #6b7f8e; font-size: 12px; }
+.project-context strong { color: #234c69; }
+.project-overview { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.project-overview span { display: block; margin-top: 6px; color: #6b7f8e; font-size: 13px; }
+.schedule-note { margin: -6px 0 14px; color: #6b7f8e; font-size: 12px; }
+.empty-project { text-align: center; padding: 42px 20px; }
+.empty-project p { margin: 8px 0 0; color: #6b7f8e; }
+.project-task-search { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 760px) {
+  .project-switcher { display: none; }
+  .project-overview { align-items: flex-start; flex-direction: column; }
+  .project-context { flex-direction: column; gap: 2px; }
+  .project-task-search { grid-template-columns: 1fr; }
+}
+</style>
