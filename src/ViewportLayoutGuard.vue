@@ -77,6 +77,101 @@ body {
   background: #7f99ab;
 }
 
+/* PCでは左メニューをビューポート内に固定し、右側だけを縦スクロールさせる。 */
+@media (min-width: 761px) {
+  html,
+  body,
+  #app {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    padding: clamp(14px, 2.2vh, 24px) 16px;
+    gap: clamp(12px, 2.5vh, 28px);
+  }
+
+  .sidebar .brand,
+  .sidebar .project-switcher,
+  .sidebar .nav-list,
+  .sidebar .reset-button {
+    flex: 0 0 auto;
+  }
+
+  .sidebar .nav-list {
+    gap: clamp(4px, 1vh, 8px);
+  }
+
+  .sidebar .nav-list button,
+  .sidebar .reset-button {
+    min-height: clamp(36px, 5.5vh, 44px);
+    padding-top: clamp(8px, 1.3vh, 12px);
+    padding-bottom: clamp(8px, 1.3vh, 12px);
+  }
+
+  .sidebar .reset-button {
+    margin-top: auto;
+  }
+
+  .main-content {
+    height: 100dvh;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+}
+
+/* 高さが低いPCウィンドウでは左メニュー内の余白を圧縮して収める。 */
+@media (min-width: 761px) and (max-height: 680px) {
+  .sidebar {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .sidebar .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .sidebar .brand small {
+    margin-top: 1px;
+    font-size: 10px;
+  }
+
+  .sidebar .project-switcher {
+    gap: 6px;
+  }
+
+  .sidebar .project-switcher select {
+    min-height: 36px;
+    padding: 7px 9px;
+  }
+
+  .sidebar .project-switcher-actions button {
+    min-height: 32px;
+    padding: 6px 8px;
+  }
+
+  .sidebar .nav-list button,
+  .sidebar .reset-button {
+    min-height: 34px;
+    padding: 7px 10px;
+  }
+}
+
 .drx-page {
   box-sizing: border-box;
   display: flex !important;
