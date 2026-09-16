@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
-const errorMessage = ref('')
-let clearTimer: number | undefined
+const errorOpen = ref(false)
+const reasons = ref<string[]>([])
 
 function controlByLabel(text: string) {
   const labels = [...document.querySelectorAll<HTMLLabelElement>('.main-content label')]
-  const label = labels.find((candidate) => {
-    const span = candidate.querySelector('span')
-    return span?.textContent?.trim() === text
-  })
+  const label = labels.find((candidate) => candidate.querySelector('span')?.textContent?.trim() === text)
   return label?.querySelector<HTMLInputElement | HTMLSelectElement>('input, select') ?? null
 }
 
@@ -19,110 +16,122 @@ function toMinutes(value: string) {
   return hour * 60 + minute
 }
 
-function formatTime(totalMinutes: number) {
-  const normalized = ((Math.round(totalMinutes) % 1440) + 1440) % 1440
-  const hour = Math.floor(normalized / 60)
-  const minute = normalized % 60
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+function numberLabel(value: number) {
+  return Number(value.toFixed(2)).toString()
 }
 
-function showError(message: string) {
-  errorMessage.value = message
-  if (clearTimer) window.clearTimeout(clearTimer)
-  clearTimer = window.setTimeout(() => {
-    errorMessage.value = ''
-  }, 7000)
+function actualWorkHours() {
+  const startTime = controlByLabel('出勤時刻') as HTMLInputElement | null
+  const endTime = controlByLabel('退勤時刻') as HTMLInputElement | null
+  const breakHours = controlByLabel('休憩時間') as HTMLInputElement | null
+  if (!startTime?.value || !endTime?.value) return null
+
+  let durationMinutes = toMinutes(endTime.value) - toMinutes(startTime.value)
+  if (durationMinutes < 0) durationMinutes += 24 * 60
+  return Math.max(0, durationMinutes / 60 - (Number(breakHours?.value) || 0))
+}
+
+function taskHours() {
+  return [...document.querySelectorAll<HTMLInputElement>('.daily-entry .hours-field input')]
+    .reduce((sum, input) => sum + (Number(input.value) || 0), 0)
+}
+
+function buildReasons() {
+  const result: string[] = []
+  const actual = actualWorkHours()
+  if (actual === null) return result
+
+  const workType = controlByLabel('勤務区分') as HTMLSelectElement | null
+  const overtimeHours = controlByLabel('残業時間') as HTMLInputElement | null
+  const overtime = Number(overtimeHours?.value) || 0
+
+  if (workType?.value === 'normal') {
+    const expected = 8 + overtime
+    if (Math.abs(actual - expected) >= 0.01) {
+      result.push(`通常勤務では、実労働時間は8時間＋残業時間と一致する必要があります。残業${numberLabel(overtime)}時間の場合は${numberLabel(expected)}時間必要ですが、現在は${numberLabel(actual)}時間です。`)
+    }
+  }
+
+  const tasks = taskHours()
+  if (Math.abs(actual - tasks) >= 0.01) {
+    const difference = Math.abs(actual - tasks)
+    result.push(`実労働${numberLabel(actual)}時間に対して、タスク工数の合計は${numberLabel(tasks)}時間です（差 ${numberLabel(difference)}時間）。`)
+  }
+
+  return result
 }
 
 function handleClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
-  const button = target?.closest('button')
+  const button = target?.closest<HTMLButtonElement>('button')
   if (!button || button.textContent?.trim() !== '日報を登録') return
 
-  const workType = controlByLabel('勤務区分') as HTMLSelectElement | null
-  const startTime = controlByLabel('出勤時刻') as HTMLInputElement | null
-  const endTime = controlByLabel('退勤時刻') as HTMLInputElement | null
-  const breakHours = controlByLabel('休憩時間') as HTMLInputElement | null
-  const overtimeHours = controlByLabel('残業時間') as HTMLInputElement | null
-
-  if (!workType || !startTime || !endTime || !breakHours || !overtimeHours) return
-  if (workType.value !== 'normal') return
-
-  const overtime = Number(overtimeHours.value) || 0
-  if (overtime <= 0) return
-
-  let durationMinutes = toMinutes(endTime.value) - toMinutes(startTime.value)
-  if (durationMinutes < 0) durationMinutes += 24 * 60
-
-  const breakValue = Number(breakHours.value) || 0
-  const actualWorkHours = durationMinutes / 60 - breakValue
-  const expectedWorkHours = 8 + overtime
-
-  if (Math.abs(actualWorkHours - expectedWorkHours) < 0.01) {
-    errorMessage.value = ''
-    return
-  }
+  const mismatches = buildReasons()
+  if (!mismatches.length) return
 
   event.preventDefault()
   event.stopPropagation()
   event.stopImmediatePropagation()
 
-  const expectedEndMinutes = toMinutes(startTime.value) + (expectedWorkHours + breakValue) * 60
-  const expectedEnd = formatTime(expectedEndMinutes)
-  showError(
-    `通常勤務の勤務時間と残業時間が一致していません。残業${Number(overtime.toFixed(2))}時間の場合、実労働は${Number(expectedWorkHours.toFixed(2))}時間必要です。現在は${Number(actualWorkHours.toFixed(2))}時間です。${startTime.value}出勤・休憩${Number(breakValue.toFixed(2))}時間の場合、退勤時刻の目安は${expectedEnd}です。`,
-  )
+  reasons.value = mismatches
+  errorOpen.value = true
 }
 
 onMounted(() => document.addEventListener('click', handleClick, true))
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClick, true)
-  if (clearTimer) window.clearTimeout(clearTimer)
-})
+onBeforeUnmount(() => document.removeEventListener('click', handleClick, true))
 </script>
 
 <template>
-  <div v-if="errorMessage" class="daily-validation-error" role="alert">
-    <strong>日報を登録できません</strong>
-    <span>{{ errorMessage }}</span>
-    <button type="button" aria-label="エラーを閉じる" @click="errorMessage = ''">×</button>
+  <div v-if="errorOpen" class="daily-time-check-backdrop">
+    <section class="daily-time-check-dialog" role="alertdialog" aria-modal="true" aria-labelledby="daily-time-check-title">
+      <header>
+        <div>
+          <p>TIME CHECK</p>
+          <h2 id="daily-time-check-title">時間が合っていないため登録できません</h2>
+        </div>
+      </header>
+
+      <p class="daily-time-check-question">以下の入力内容を修正してから、もう一度「日報を登録」を押してください。</p>
+      <ul>
+        <li v-for="reason in reasons" :key="reason">{{ reason }}</li>
+      </ul>
+      <p class="daily-time-check-note">「仮保存」は入力途中の保存用のため、この時間チェックを行いません。</p>
+
+      <footer>
+        <button type="button" class="primary" @click="errorOpen = false">入力に戻る</button>
+      </footer>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.daily-validation-error {
+.daily-time-check-backdrop {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 200;
-  width: min(520px, calc(100vw - 48px));
+  inset: 0;
+  z-index: 300;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 5px 14px;
-  padding: 16px 16px 16px 18px;
-  border: 1px solid #e7a59c;
-  border-left: 5px solid #d74d3f;
-  border-radius: 12px;
-  background: #fff7f5;
-  color: #6f2e27;
-  box-shadow: 0 14px 40px rgba(86, 37, 31, .18);
+  place-items: center;
+  padding: 20px;
+  background: rgba(18, 38, 54, .48);
 }
-.daily-validation-error strong { font-size: 14px; }
-.daily-validation-error span { grid-column: 1 / 2; line-height: 1.6; font-size: 13px; }
-.daily-validation-error button {
-  grid-column: 2;
-  grid-row: 1 / 3;
-  align-self: start;
-  width: 34px;
-  height: 34px;
-  border: 0;
-  border-radius: 8px;
-  background: #f6dfdb;
-  color: #7b312a;
-  font-size: 20px;
-  cursor: pointer;
+.daily-time-check-dialog {
+  width: min(580px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(0,0,0,.2);
 }
+.daily-time-check-dialog header p { margin: 0 0 4px; color: #d64a3a; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.daily-time-check-dialog h2 { margin: 0; color: #17354d; }
+.daily-time-check-question { margin: 0; color: #344f63; font-weight: 700; }
+.daily-time-check-dialog ul { margin: 0; padding: 13px 16px 13px 34px; border-radius: 10px; background: #fff0ed; color: #8c372d; line-height: 1.65; }
+.daily-time-check-note { margin: 0; color: #6b7f8e; font-size: 12px; }
+.daily-time-check-dialog footer { display: flex; justify-content: flex-end; }
+.daily-time-check-dialog button { min-height: 42px; padding: 9px 18px; border-radius: 9px; font: inherit; font-weight: 800; cursor: pointer; }
+.daily-time-check-dialog .primary { border: 0; background: #14a6b6; color: #fff; }
 @media (max-width: 600px) {
-  .daily-validation-error { right: 12px; bottom: 12px; width: calc(100vw - 24px); }
+  .daily-time-check-dialog button { width: 100%; }
 }
 </style>
