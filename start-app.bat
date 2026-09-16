@@ -1,6 +1,14 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+
+set "APP_DIR=%~dp0"
+cd /d "%APP_DIR%"
+if errorlevel 1 (
+  echo [ERROR] Failed to open the app directory.
+  echo %APP_DIR%
+  pause
+  exit /b 1
+)
 
 echo ======================================
 echo   WBS TC launcher
@@ -14,7 +22,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist "node_modules" (
+if not exist "%APP_DIR%node_modules" (
   echo [INFO] Installing dependencies...
   call npm install
   if errorlevel 1 (
@@ -25,7 +33,7 @@ if not exist "node_modules" (
 )
 
 echo [INFO] Starting WBS TC...
-start "WBS TC Server" cmd /k "cd /d \"%~dp0\" && npm run dev"
+start "WBS TC Server" /D "%APP_DIR%" cmd.exe /k npm run dev
 
 timeout /t 3 /nobreak >nul
 start "" "http://localhost:5173"
