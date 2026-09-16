@@ -83,6 +83,13 @@ function sectionMonthLabel(section: Section) {
   return `${start.getMonth() + 1}月～${end.getMonth() + 1}月`
 }
 
+function taskProgressForSection(state: AppState, sectionId: string) {
+  const sectionTasks = state.tasks.filter((task) => task.sectionId === sectionId)
+  const leaves = sectionTasks.filter((task) => !state.tasks.some((candidate) => candidate.parentId === task.id))
+  if (!leaves.length) return 0
+  return Math.round(leaves.reduce((sum, task) => sum + task.progress, 0) / leaves.length)
+}
+
 function updateMonthlySchedule() {
   const state = readState()
   const axis = document.querySelector<HTMLElement>('.schedule-axis')
@@ -94,6 +101,16 @@ function updateMonthlySchedule() {
 
   const months = monthRange(project)
   if (!months.length) return
+
+  const projectSections = state.sections.filter((section) => section.projectId === project.id)
+  const renderKey = [
+    project.id,
+    project.startDate,
+    project.dueDate,
+    ...projectSections.map((section) => `${section.id}:${section.startDate}:${section.dueDate}:${taskProgressForSection(state, section.id)}`),
+  ].join('|')
+  if (axis.dataset.monthlyScheduleKey === renderKey) return
+  axis.dataset.monthlyScheduleKey = renderKey
 
   axis.classList.add('monthly-schedule-axis')
   axis.style.gridTemplateColumns = `repeat(${months.length}, minmax(54px, 1fr))`
@@ -110,7 +127,6 @@ function updateMonthlySchedule() {
   }))
 
   const projectMonthStart = monthStart(project.startDate)
-  const projectSections = state.sections.filter((section) => section.projectId === project.id)
   const rows = [...document.querySelectorAll<HTMLElement>('.schedule-row')]
 
   rows.forEach((row) => {
@@ -132,15 +148,9 @@ function updateMonthlySchedule() {
     bar.title = `${section.name}：${section.startDate} ～ ${section.dueDate}`
 
     const text = bar.querySelector<HTMLElement>('span')
-    if (text) text.textContent = `${sectionMonthLabel(section)} / ${taskProgressForSection(state, section.id)}%`
+    const nextText = `${sectionMonthLabel(section)} / ${taskProgressForSection(state, section.id)}%`
+    if (text && text.textContent !== nextText) text.textContent = nextText
   })
-}
-
-function taskProgressForSection(state: AppState, sectionId: string) {
-  const sectionTasks = state.tasks.filter((task) => task.sectionId === sectionId)
-  const leaves = sectionTasks.filter((task) => !state.tasks.some((candidate) => candidate.parentId === task.id))
-  if (!leaves.length) return 0
-  return Math.round(leaves.reduce((sum, task) => sum + task.progress, 0) / leaves.length)
 }
 
 function taskAddForm() {
