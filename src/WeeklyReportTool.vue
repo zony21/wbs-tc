@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { flushStateToDatabase } from './dbSync'
 
 type WorkType = 'normal' | 'staggered' | 'remote' | 'other'
@@ -44,15 +44,9 @@ const open = ref(false)
 const loading = ref(false)
 const outputText = ref('')
 const copyStatus = ref('')
-const dbOnline = ref(true)
-const dbMessage = ref('')
+const errorMessage = ref('')
 const lastWeekLabel = ref('')
 const thisWeekLabel = ref('')
-
-function parseDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, day))
-}
 
 function toDateKey(date: Date) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
@@ -138,17 +132,17 @@ function buildWeeklyReport(state: AppState) {
 async function generateReport() {
   loading.value = true
   copyStatus.value = ''
+  errorMessage.value = ''
+  open.value = true
   try {
     await flushStateToDatabase()
     const response = await fetch('/api/state', { headers: { Accept: 'application/json' } })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const state = await response.json() as AppState
     outputText.value = buildWeeklyReport(state)
-    open.value = true
   } catch (error) {
     console.error(error)
-    dbOnline.value = false
-    dbMessage.value = '週報データをSQLiteから取得できませんでした。'
+    errorMessage.value = '週報データをSQLiteから取得できませんでした。'
   } finally {
     loading.value = false
   }
@@ -160,60 +154,48 @@ async function copyOutput() {
     copyStatus.value = 'コピーしました。'
   } catch {
     const textarea = document.querySelector<HTMLTextAreaElement>('#weekly-report-output')
-    if (textarea) {
-      textarea.focus()
-      textarea.select()
-      const copied = document.execCommand('copy')
-      copyStatus.value = copied ? 'コピーしました。' : 'コピーできませんでした。'
-    }
+    if (!textarea) return
+    textarea.focus()
+    textarea.select()
+    const copied = document.execCommand('copy')
+    copyStatus.value = copied ? 'コピーしました。' : 'コピーできませんでした。'
   }
 }
 
-function handleDbStatus(event: Event) {
-  const detail = (event as CustomEvent<{ online: boolean; message?: string }>).detail
-  dbOnline.value = detail.online
-  dbMessage.value = detail.message || ''
-}
-
-const dbStatusLabel = computed(() => dbOnline.value ? 'SQLite接続中' : 'SQLite未接続')
-
-onMounted(() => window.addEventListener('wbs-db-status', handleDbStatus))
-onBeforeUnmount(() => window.removeEventListener('wbs-db-status', handleDbStatus))
+onMounted(() => window.addEventListener('wbs-open-weekly-report', generateReport))
+onBeforeUnmount(() => window.removeEventListener('wbs-open-weekly-report', generateReport))
 </script>
 
 <template>
-  <div class="weekly-tool">
-    <div class="weekly-db-status" :class="{ offline: !dbOnline }" :title="dbMessage">
-      <span></span>{{ dbStatusLabel }}
-    </div>
-    <button class="weekly-output-button" type="button" :disabled="loading" @click="generateReport">
-      {{ loading ? '生成中…' : '週報を出力' }}
-    </button>
-  </div>
-
   <div v-if="open" class="weekly-backdrop" @click.self="open = false">
     <section class="weekly-modal" role="dialog" aria-modal="true" aria-labelledby="weekly-title">
       <header>
         <div>
           <p>WEEKLY REPORT</p>
-          <h2 id="weekly-title">上層部共有用テキスト</h2>
+          <h2 id="weekly-title">週報出力</h2>
+          <span>日報確認から、上層部共有用テキストを生成します。</span>
         </div>
         <button type="button" aria-label="閉じる" @click="open = false">×</button>
       </header>
 
-      <div class="weekly-periods">
-        <span>先週：{{ lastWeekLabel }}</span>
-        <span>今週：{{ thisWeekLabel }}</span>
-      </div>
-
-      <p class="weekly-help">日報とWBSから自動生成しています。送信前にこの欄で自由に修正できます。</p>
-      <textarea id="weekly-report-output" v-model="outputText" rows="14"></textarea>
+      <div v-if="loading" class="weekly-loading">週報を生成しています…</div>
+      <template v-else>
+        <p v-if="errorMessage" class="weekly-error">{{ errorMessage }}</p>
+        <template v-else>
+          <div class="weekly-periods">
+            <span>先週：{{ lastWeekLabel }}</span>
+            <span>今週：{{ thisWeekLabel }}</span>
+          </div>
+          <p class="weekly-help">日報とWBSから自動生成しています。送信前にこの欄で修正できます。</p>
+          <textarea id="weekly-report-output" v-model="outputText" rows="14"></textarea>
+        </template>
+      </template>
 
       <footer>
         <span class="weekly-copy-status" aria-live="polite">{{ copyStatus }}</span>
         <div>
-          <button type="button" class="weekly-secondary" @click="open = false">閉じる</button>
-          <button type="button" class="weekly-primary" @click="copyOutput">テキストをコピー</button>
+          <button type="button" class="weekly-secondary" @click="open = false">日報確認へ戻る</button>
+          <button v-if="!loading && !errorMessage" type="button" class="weekly-primary" @click="copyOutput">テキストをコピー</button>
         </div>
       </footer>
     </section>
@@ -221,69 +203,21 @@ onBeforeUnmount(() => window.removeEventListener('wbs-db-status', handleDbStatus
 </template>
 
 <style scoped>
-.weekly-tool {
-  position: fixed;
-  right: 24px;
-  top: 20px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.weekly-db-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
-  border: 1px solid #d7e0ea;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .96);
-  color: #526273;
-  font-size: 12px;
-  font-weight: 700;
-}
-.weekly-db-status span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #26a269;
-}
-.weekly-db-status.offline span { background: #d64545; }
-.weekly-output-button,
-.weekly-primary,
-.weekly-secondary {
-  border: 0;
-  border-radius: 10px;
-  min-height: 40px;
-  padding: 0 16px;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-.weekly-output-button,
-.weekly-primary {
-  background: #244d74;
-  color: white;
-}
-.weekly-output-button:disabled { opacity: .6; cursor: wait; }
-.weekly-secondary { background: #eef2f6; color: #33475b; }
 .weekly-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 180;
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(12, 28, 43, .55);
+  background: rgba(17, 31, 48, .58);
 }
 .weekly-modal {
-  width: min(720px, 100%);
-  max-height: calc(100vh - 48px);
-  overflow: auto;
-  border-radius: 16px;
-  background: white;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, .25);
-  padding: 24px;
+  width: min(760px, 94vw);
+  overflow: hidden;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 31, 49, .28);
 }
 .weekly-modal header,
 .weekly-modal footer {
@@ -291,32 +225,63 @@ onBeforeUnmount(() => window.removeEventListener('wbs-db-status', handleDbStatus
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 18px 22px;
 }
-.weekly-modal header p { margin: 0 0 4px; color: #7a8a9a; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
-.weekly-modal header h2 { margin: 0; color: #213547; font-size: 22px; }
-.weekly-modal header > button { border: 0; background: transparent; font-size: 28px; cursor: pointer; color: #6b7785; }
-.weekly-periods { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 10px; }
-.weekly-periods span { padding: 7px 10px; border-radius: 8px; background: #f2f5f8; color: #536579; font-size: 12px; font-weight: 700; }
-.weekly-help { margin: 0 0 10px; color: #6e7e8d; font-size: 13px; }
+.weekly-modal header { border-bottom: 1px solid #e1e8ef; }
+.weekly-modal header p { margin: 0 0 2px; color: #718196; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.weekly-modal header h2 { margin: 0; color: #1d344c; font-size: 23px; }
+.weekly-modal header span { display: block; margin-top: 4px; color: #78889a; font-size: 12px; }
+.weekly-modal header > button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: #eef3f7;
+  color: #29445c;
+  font-size: 22px;
+  cursor: pointer;
+}
+.weekly-periods {
+  display: flex;
+  gap: 10px;
+  padding: 14px 22px 0;
+}
+.weekly-periods span { padding: 6px 10px; border-radius: 999px; background: #edf3f7; color: #476178; font-size: 12px; font-weight: 700; }
+.weekly-help { margin: 14px 22px 8px; color: #718196; font-size: 12px; }
 .weekly-modal textarea {
-  width: 100%;
+  display: block;
+  width: calc(100% - 44px);
+  margin: 0 22px;
   box-sizing: border-box;
   resize: vertical;
-  border: 1px solid #cfd9e3;
-  border-radius: 10px;
   padding: 14px;
-  color: #25384a;
-  background: #fbfcfd;
-  font: 14px/1.75 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border: 1px solid #cdd8e3;
+  border-radius: 10px;
+  color: #253d54;
+  font: inherit;
+  line-height: 1.7;
 }
-.weekly-modal footer { margin-top: 16px; }
+.weekly-modal footer { margin-top: 16px; border-top: 1px solid #e1e8ef; }
 .weekly-modal footer > div { display: flex; gap: 8px; }
-.weekly-copy-status { color: #25734d; font-size: 13px; font-weight: 700; }
-@media (max-width: 760px) {
-  .weekly-tool { top: auto; right: 14px; bottom: 14px; flex-direction: column; align-items: flex-end; }
-  .weekly-db-status { display: none; }
-  .weekly-backdrop { padding: 12px; }
-  .weekly-modal { padding: 18px; max-height: calc(100vh - 24px); }
-  .weekly-modal footer { align-items: flex-end; flex-direction: column; }
+.weekly-primary,
+.weekly-secondary {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.weekly-primary { border: 0; background: #173f5f; color: #fff; }
+.weekly-secondary { border: 1px solid #cbd7e2; background: #fff; color: #29465f; }
+.weekly-copy-status { color: #3b7a57; font-size: 12px; font-weight: 700; }
+.weekly-loading { padding: 48px 22px; text-align: center; color: #60758a; }
+.weekly-error { margin: 20px 22px; padding: 12px 14px; border-radius: 9px; background: #fff0ee; color: #b13f32; font-weight: 700; }
+@media (max-width: 600px) {
+  .weekly-backdrop { padding: 10px; }
+  .weekly-periods { flex-direction: column; align-items: flex-start; }
+  .weekly-modal footer { align-items: flex-start; flex-direction: column; }
+  .weekly-modal footer > div { width: 100%; }
+  .weekly-primary, .weekly-secondary { flex: 1; }
 }
 </style>
