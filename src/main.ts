@@ -1,5 +1,8 @@
 import { createApp } from 'vue'
-import App from './App.vue'
+import Root from './Root.vue'
+import { bootstrapDatabaseState, startDatabaseSync } from './dbSync'
 import './style.css'
 
-createApp(App).mount('#app')
+await bootstrapDatabaseState()
+createApp(Root).mount('#app')
+startDatabaseSync()
