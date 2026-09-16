@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 const STORAGE_KEY = 'wbs-tc-state-v1'
-export const SUCCESS_KEY = 'wbs-registration-success'
+const SUCCESS_KEY = 'wbs-registration-success'
 
 type Destination = 'dashboard' | 'wbs' | 'daily'
 
@@ -13,6 +13,7 @@ interface SuccessState {
 
 const success = ref<SuccessState | null>(null)
 let pendingTimer: number | undefined
+let pendingSessionTimer: number | undefined
 
 function readStorage() {
   return localStorage.getItem(STORAGE_KEY) || ''
@@ -28,6 +29,12 @@ function classifyButton(button: HTMLButtonElement): SuccessState | null {
 
   if (text === '日報を登録' && button.closest('.daily-layout')) {
     return { message: '日報を登録しました。', destination: 'daily' }
+  }
+  if (text === '仮保存' && button.classList.contains('daily-draft-button')) {
+    return { message: '日報を仮保存しました。', destination: 'daily' }
+  }
+  if (text === '保存' && button.closest('.section-edit-modal')) {
+    return { message: 'WBSセクションを更新しました。', destination: 'wbs' }
   }
 
   const modal = button.closest<HTMLFormElement>('form.modal')
@@ -53,6 +60,21 @@ function classifyButton(button: HTMLButtonElement): SuccessState | null {
   return null
 }
 
+function isReloadSave(button: HTMLButtonElement) {
+  const text = button.textContent?.trim() || ''
+  return (text === '仮保存' && button.classList.contains('daily-draft-button'))
+    || (text === '保存' && Boolean(button.closest('.section-edit-modal')))
+}
+
+function setPendingSessionSuccess(candidate: SuccessState) {
+  const serialized = JSON.stringify(candidate)
+  sessionStorage.setItem(SUCCESS_KEY, serialized)
+  if (pendingSessionTimer) window.clearTimeout(pendingSessionTimer)
+  pendingSessionTimer = window.setTimeout(() => {
+    if (sessionStorage.getItem(SUCCESS_KEY) === serialized) sessionStorage.removeItem(SUCCESS_KEY)
+  }, 5000)
+}
+
 function handleClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
   const button = target?.closest<HTMLButtonElement>('button')
@@ -60,6 +82,11 @@ function handleClick(event: MouseEvent) {
 
   const candidate = classifyButton(button)
   if (!candidate) return
+
+  if (isReloadSave(button)) {
+    setPendingSessionSuccess(candidate)
+    return
+  }
 
   const before = readStorage()
   if (pendingTimer) window.clearTimeout(pendingTimer)
@@ -110,6 +137,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClick)
   if (pendingTimer) window.clearTimeout(pendingTimer)
+  if (pendingSessionTimer) window.clearTimeout(pendingSessionTimer)
 })
 </script>
 
