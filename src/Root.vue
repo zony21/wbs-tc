@@ -7,6 +7,7 @@ import DailyReportValidationGuard from './DailyReportValidationGuard.vue'
 import ScheduleTaskEnhancer from './ScheduleTaskEnhancer.vue'
 import SectionEditTool from './SectionEditTool.vue'
 import DailyDraftEditTool from './DailyDraftEditTool.vue'
+import DailyReportCopyTool from './DailyReportCopyTool.vue'
 import RegistrationFeedbackTool from './RegistrationFeedbackTool.vue'
 </script>
 
@@ -19,5 +20,6 @@ import RegistrationFeedbackTool from './RegistrationFeedbackTool.vue'
   <ScheduleTaskEnhancer />
   <SectionEditTool />
   <DailyDraftEditTool />
+  <DailyReportCopyTool />
   <RegistrationFeedbackTool />
 </template>
