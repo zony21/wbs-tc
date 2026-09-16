@@ -46,6 +46,14 @@ interface AppState {
   reports: DailyReport[]
 }
 
+interface CalendarDay {
+  key: string
+  day: number
+  inMonth: boolean
+  isToday: boolean
+  report?: DailyReport
+}
+
 const workTypeLabels: Record<WorkType, string> = {
   normal: '通常勤務',
   staggered: '時差出勤',
@@ -53,10 +61,15 @@ const workTypeLabels: Record<WorkType, string> = {
   other: 'その他',
 }
 
+const weekdayLabels = ['月', '火', '水', '木', '金', '土', '日']
 const open = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const state = ref<AppState>({ projects: [], sections: [], tasks: [], reports: [] })
+
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
 
 function currentMonthValue() {
   const now = new Date()
@@ -85,6 +98,13 @@ function taskName(taskId: string) {
   return `${project?.name || '案件不明'}｜${task.id}｜${task.name}`
 }
 
+function taskTooltip(report: DailyReport) {
+  if (!report.entries.length) return '作業実績なし'
+  return report.entries
+    .map((entry) => `${taskName(entry.taskId)} ${numberLabel(entry.hours)}h`)
+    .join('\n')
+}
+
 function numberLabel(value: number) {
   return Number(value.toFixed(2)).toString()
 }
@@ -92,13 +112,6 @@ function numberLabel(value: number) {
 function monthLabel() {
   const [year, month] = selectedMonth.value.split('-')
   return `${year}年${Number(month)}月`
-}
-
-function dateLabel(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  const date = new Date(year, month - 1, day)
-  const weekday = new Intl.DateTimeFormat('ja-JP', { weekday: 'short' }).format(date)
-  return `${month}月${day}日（${weekday}）`
 }
 
 function shiftMonth(amount: number) {
@@ -109,7 +122,29 @@ function shiftMonth(amount: number) {
 
 const filteredReports = computed(() => state.value.reports
   .filter((report) => report.date.startsWith(`${selectedMonth.value}-`))
-  .sort((a, b) => b.date.localeCompare(a.date)))
+  .sort((a, b) => a.date.localeCompare(b.date)))
+
+const calendarDays = computed<CalendarDay[]>(() => {
+  const [year, month] = selectedMonth.value.split('-').map(Number)
+  const firstDay = new Date(year, month - 1, 1)
+  const mondayOffset = (firstDay.getDay() + 6) % 7
+  const gridStart = new Date(year, month - 1, 1 - mondayOffset)
+  const reportMap = new Map(state.value.reports.map((report) => [report.date, report]))
+  const today = dateKey(new Date())
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart)
+    date.setDate(gridStart.getDate() + index)
+    const key = dateKey(date)
+    return {
+      key,
+      day: date.getDate(),
+      inMonth: date.getFullYear() === year && date.getMonth() === month - 1,
+      isToday: key === today,
+      report: reportMap.get(key),
+    }
+  })
+})
 
 const totalWorkHours = computed(() => filteredReports.value.reduce((sum, report) => sum + reportWorkHours(report), 0))
 const totalOvertimeHours = computed(() => filteredReports.value.reduce((sum, report) => sum + (Number(report.overtimeHours) || 0), 0))
@@ -162,7 +197,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">DAILY REPORT REVIEW</p>
         <h1 id="daily-review-title">日報確認</h1>
-        <span>月別に、日付ごとの勤務・案件別作業実績を確認します。</span>
+        <span>月間カレンダーで勤務状況を確認し、作業内容は必要な日だけ展開できます。</span>
       </div>
       <div class="daily-review-header-actions">
         <button type="button" class="action-secondary" @click="openWeeklyReport">週報出力</button>
@@ -188,49 +223,64 @@ onBeforeUnmount(() => {
         <div><span>タスク工数合計</span><strong>{{ numberLabel(totalTaskHours) }}h</strong></div>
       </div>
 
-      <div class="daily-report-list">
-        <article v-for="report in filteredReports" :key="report.id" class="daily-report-card">
-          <header class="report-card-header">
-            <div>
-              <strong>{{ dateLabel(report.date) }}</strong>
-              <span>{{ report.date }}</span>
-            </div>
-            <div class="report-badges">
-              <span>{{ workTypeLabels[report.workType] }}</span>
-              <span v-if="report.overtimeHours > 0" class="overtime-badge">残業 {{ numberLabel(report.overtimeHours) }}h</span>
-            </div>
-          </header>
-
-          <div class="report-metrics">
-            <div><span>勤務時間</span><strong>{{ report.startTime }} ～ {{ report.endTime }}</strong></div>
-            <div><span>休憩</span><strong>{{ numberLabel(report.breakHours) }}h</strong></div>
-            <div><span>実労働</span><strong>{{ numberLabel(reportWorkHours(report)) }}h</strong></div>
-            <div><span>残業</span><strong :class="{ overtime: report.overtimeHours > 0 }">{{ numberLabel(report.overtimeHours) }}h</strong></div>
+      <div class="calendar-scroll">
+        <div class="daily-calendar">
+          <div class="calendar-weekdays" aria-hidden="true">
+            <div v-for="weekday in weekdayLabels" :key="weekday">{{ weekday }}</div>
           </div>
 
-          <div class="report-content-grid">
-            <section class="report-tasks">
-              <h3>作業実績</h3>
-              <div v-if="report.entries.length" class="task-list">
-                <div v-for="entry in report.entries" :key="entry.rowId">
-                  <span>{{ taskName(entry.taskId) }}</span>
-                  <strong>{{ numberLabel(entry.hours) }}h</strong>
-                </div>
+          <div class="daily-calendar-grid">
+            <section
+              v-for="day in calendarDays"
+              :key="day.key"
+              :class="['calendar-day', { 'outside-month': !day.inMonth, today: day.isToday }]"
+            >
+              <div class="calendar-day-heading">
+                <strong>{{ day.day }}</strong>
+                <span v-if="day.isToday">今日</span>
               </div>
-              <p v-else class="empty-small">作業実績はありません。</p>
-            </section>
 
-            <section class="report-remarks">
-              <h3>備考</h3>
-              <p>{{ report.remarks || '－' }}</p>
+              <article v-if="day.report" class="daily-report-card">
+                <header class="report-card-header">
+                  <div class="report-title">
+                    <strong>{{ workTypeLabels[day.report.workType] }}</strong>
+                    <span>{{ day.report.date }}</span>
+                  </div>
+                  <div class="report-badges">
+                    <span v-if="day.report.overtimeHours > 0" class="overtime-badge">残業 {{ numberLabel(day.report.overtimeHours) }}h</span>
+                  </div>
+                </header>
+
+                <div class="report-compact-metrics">
+                  <span>{{ day.report.startTime }}–{{ day.report.endTime }}</span>
+                  <span>実働 {{ numberLabel(reportWorkHours(day.report)) }}h</span>
+                  <span v-if="day.report.overtimeHours > 0" class="overtime-text">残業 {{ numberLabel(day.report.overtimeHours) }}h</span>
+                </div>
+
+                <details class="report-details">
+                  <summary :title="taskTooltip(day.report)">
+                    <span>作業詳細</span>
+                    <strong>{{ day.report.entries.length }}件</strong>
+                  </summary>
+                  <div class="report-detail-body">
+                    <div v-if="day.report.entries.length" class="task-list">
+                      <div v-for="entry in day.report.entries" :key="entry.rowId">
+                        <span :title="taskName(entry.taskId)">{{ taskName(entry.taskId) }}</span>
+                        <strong>{{ numberLabel(entry.hours) }}h</strong>
+                      </div>
+                    </div>
+                    <p v-else class="empty-small">作業実績はありません。</p>
+                    <div v-if="day.report.remarks" class="report-remarks">
+                      <strong>備考</strong>
+                      <p>{{ day.report.remarks }}</p>
+                    </div>
+                  </div>
+                </details>
+              </article>
+
+              <span v-else-if="day.inMonth" class="calendar-no-report">－</span>
             </section>
           </div>
-        </article>
-
-        <div v-if="!filteredReports.length" class="daily-review-empty">
-          <strong>{{ monthLabel() }}の日報はありません</strong>
-          <span>「日報登録」から登録できます。</span>
-          <button type="button" @click="openDailyEntry">＋ 日報登録</button>
         </div>
       </div>
     </template>
@@ -273,8 +323,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .daily-review-header-actions { display: flex; align-items: center; gap: 8px; }
-.daily-review-header-actions button,
-.daily-review-empty button {
+.daily-review-header-actions button {
   min-height: 42px;
   padding: 0 16px;
   border-radius: 9px;
@@ -321,96 +370,221 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 .daily-review-summary > div {
-  padding: 16px 18px;
+  padding: 14px 16px;
   border: 1px solid #dce5eb;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
 }
-.daily-review-summary span { display: block; color: #6b7f8e; font-size: 12px; }
-.daily-review-summary strong { display: block; margin-top: 4px; color: #17354d; font-size: 24px; }
-.daily-report-list { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
-.daily-report-card {
+.daily-review-summary span { display: block; color: #6b7f8e; font-size: 11px; }
+.daily-review-summary strong { display: block; margin-top: 3px; color: #17354d; font-size: 21px; }
+.calendar-scroll {
+  overflow-x: auto;
+  margin-top: 16px;
+  padding-bottom: 8px;
+}
+.daily-calendar {
+  min-width: 980px;
   overflow: hidden;
-  border: 1px solid #dce5eb;
+  border: 1px solid #d8e1e8;
   border-radius: 14px;
+  background: #dfe6ec;
+}
+.calendar-weekdays,
+.daily-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+}
+.calendar-weekdays > div {
+  padding: 9px 8px;
+  background: #edf3f7;
+  color: #60758a;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+.calendar-weekdays > div:nth-child(6) { color: #3978a8; }
+.calendar-weekdays > div:nth-child(7) { color: #b14a40; }
+.calendar-day {
+  min-height: 154px;
+  padding: 8px;
   background: #fff;
 }
-.report-card-header {
+.calendar-day.outside-month {
+  background: #f7f9fb;
+  color: #9aabba;
+}
+.calendar-day.today {
+  box-shadow: inset 0 0 0 2px #14a6b6;
+}
+.calendar-day-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px 18px;
-  border-bottom: 1px solid #e7edf2;
+  min-height: 26px;
+  margin-bottom: 5px;
 }
-.report-card-header strong { display: block; color: #1d3a54; font-size: 18px; }
-.report-card-header > div:first-child span { display: block; margin-top: 2px; color: #8190a0; font-size: 11px; }
-.report-badges { display: flex; flex-wrap: wrap; gap: 7px; }
+.calendar-day-heading strong {
+  color: #344f63;
+  font-size: 13px;
+}
+.outside-month .calendar-day-heading strong { color: #9aabba; }
+.calendar-day-heading span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e5f7f8;
+  color: #0e7b86;
+  font-size: 9px;
+  font-weight: 800;
+}
+.daily-report-card {
+  overflow: hidden;
+  border: 1px solid #d9e3ea;
+  border-radius: 9px;
+  background: #fbfdfe;
+}
+.report-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 7px 8px 5px;
+}
+.report-title { min-width: 0; }
+.report-title strong {
+  display: block;
+  overflow: hidden;
+  color: #24435b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.report-title span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.report-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px;
+}
 .report-badges span {
-  padding: 5px 9px;
+  padding: 2px 5px;
   border-radius: 999px;
   background: #edf3f7;
   color: #426078;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 800;
+  white-space: nowrap;
 }
 .report-badges .overtime-badge { background: #fff0ed; color: #ad4436; }
-.report-metrics {
-  display: grid;
-  grid-template-columns: 2fr repeat(3, 1fr);
-  border-bottom: 1px solid #edf1f4;
+.report-compact-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  padding: 0 8px 6px;
+  color: #60758a;
+  font-size: 10px;
 }
-.report-metrics > div { padding: 12px 18px; border-right: 1px solid #edf1f4; }
-.report-metrics > div:last-child { border-right: 0; }
-.report-metrics span { display: block; color: #7a8998; font-size: 11px; }
-.report-metrics strong { display: block; margin-top: 3px; color: #29435b; font-size: 14px; }
-.report-metrics strong.overtime { color: #b24533; }
-.report-content-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(240px, .8fr);
-  gap: 18px;
-  padding: 16px 18px 18px;
+.report-compact-metrics .overtime-text { color: #b24533; font-weight: 800; }
+.report-details {
+  border-top: 1px solid #e8eef2;
 }
-.report-content-grid h3 { margin: 0 0 9px; color: #597087; font-size: 12px; }
-.task-list { display: flex; flex-direction: column; gap: 6px; }
+.report-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  color: #49657b;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+.report-details summary::-webkit-details-marker { display: none; }
+.report-details summary::after {
+  content: '＋';
+  margin-left: auto;
+  color: #8193a2;
+}
+.report-details[open] summary::after { content: '−'; }
+.report-details summary strong {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #edf3f7;
+  color: #45647b;
+  font-size: 9px;
+}
+.report-detail-body {
+  padding: 0 7px 7px;
+}
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .task-list > div {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f6f9fb;
-  color: #344d64;
-  font-size: 12px;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  background: #f4f8fa;
+  font-size: 9px;
 }
-.task-list strong { flex: 0 0 auto; color: #23577d; }
-.report-remarks p { margin: 0; color: #455d72; line-height: 1.65; font-size: 12px; white-space: pre-wrap; }
-.empty-small { margin: 0; color: #8190a0; font-size: 12px; }
-.daily-review-empty {
-  display: grid;
-  justify-items: center;
-  gap: 7px;
-  padding: 48px 20px;
-  border: 1px dashed #cad6e1;
-  border-radius: 14px;
-  background: #fff;
-  color: #718196;
+.task-list span {
+  min-width: 0;
+  overflow: hidden;
+  color: #405b70;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.daily-review-empty strong { color: #29445d; font-size: 16px; }
-.daily-review-empty button { margin-top: 8px; border: 0; background: #173f5f; color: #fff; }
-.daily-review-loading { padding: 64px 20px; text-align: center; color: #60758a; }
-.daily-review-error { margin: 16px 0 0; padding: 12px 14px; border-radius: 9px; background: #fff0ee; color: #b13f32; font-weight: 700; }
-:global(.sidebar) { position: relative; z-index: 50; }
-@media (max-width: 760px) {
-  .daily-review-page { inset: 72px 0 0 0; padding: 18px 14px 36px; }
+.task-list strong { flex: 0 0 auto; color: #17354d; }
+.report-remarks {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #dce5eb;
+}
+.report-remarks strong { color: #60758a; font-size: 9px; }
+.report-remarks p {
+  margin: 2px 0 0;
+  color: #50697c;
+  font-size: 9px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.empty-small,
+.calendar-no-report {
+  color: #a2b0bc;
+  font-size: 10px;
+}
+.calendar-no-report { display: block; padding: 8px 2px; }
+.daily-review-loading { padding: 48px 0; text-align: center; color: #60758a; }
+.daily-review-error {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: #fff0ee;
+  color: #b13f32;
+  font-weight: 700;
+}
+@media (max-width: 900px) {
+  .daily-review-page { inset-left: 0; padding: 20px 14px 36px; }
   .daily-review-header { align-items: flex-start; flex-direction: column; }
   .daily-review-header-actions { width: 100%; }
   .daily-review-header-actions button { flex: 1; }
   .daily-review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .daily-review-summary { grid-template-columns: 1fr 1fr; }
   .daily-review-monthbar { flex-wrap: wrap; }
-  .report-card-header { align-items: flex-start; flex-direction: column; }
-  .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .report-metrics > div { border-bottom: 1px solid #edf1f4; }
-  .report-content-grid { grid-template-columns: 1fr; }
+  .daily-review-monthbar strong { width: 100%; margin-left: 0; }
 }
 </style>
