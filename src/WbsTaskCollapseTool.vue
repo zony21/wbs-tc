@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
 
-const collapsedParents = new Set<string>()
-const initializedParents = new Set<string>()
-const collapsedSections = new Set<string>()
-const initializedSections = new Set<string>()
+const expandedSections = new Set<string>()
+const expandedParents = new Set<string>()
 let observer: MutationObserver | undefined
 let refreshFrame: number | undefined
 let wbsVisible = false
@@ -25,7 +23,22 @@ function childRowsFor(parentRow: HTMLTableRowElement) {
   return rows
 }
 
-function applyParentState(parentRow: HTMLTableRowElement) {
+function sectionIdFor(panel: HTMLElement) {
+  return panel.querySelector<HTMLElement>('.section-heading .eyebrow')?.textContent?.trim() || ''
+}
+
+function parentRowsFor(panel: HTMLElement) {
+  return [...panel.querySelectorAll<HTMLTableRowElement>('.wbs-table tbody > tr.parent-row')]
+}
+
+function collapseParentsIn(panel: HTMLElement) {
+  parentRowsFor(panel).forEach((row) => {
+    const taskId = taskIdForRow(row)
+    if (taskId) expandedParents.delete(taskId)
+  })
+}
+
+function applyParentState(parentRow: HTMLTableRowElement, sectionExpanded: boolean) {
   const taskId = taskIdForRow(parentRow)
   const taskCell = parentRow.cells.item(1)
   if (!taskId || !taskCell) return
@@ -35,16 +48,15 @@ function applyParentState(parentRow: HTMLTableRowElement) {
 
   if (!children.length) {
     toggle?.remove()
-    collapsedParents.delete(taskId)
-    initializedParents.delete(taskId)
-    parentRow.classList.remove('wbs-parent-collapsed')
+    expandedParents.delete(taskId)
+    parentRow.classList.remove('wbs-parent-expanded')
     return
   }
 
-  if (!initializedParents.has(taskId)) {
-    initializedParents.add(taskId)
-    collapsedParents.add(taskId)
-  }
+  children.forEach((row) => {
+    row.dataset.wbsParentId = taskId
+    row.removeAttribute('hidden')
+  })
 
   if (!toggle) {
     toggle = document.createElement('button')
@@ -54,29 +66,25 @@ function applyParentState(parentRow: HTMLTableRowElement) {
       event.preventDefault()
       event.stopPropagation()
 
-      if (collapsedParents.has(taskId)) collapsedParents.delete(taskId)
-      else collapsedParents.add(taskId)
+      if (expandedParents.has(taskId)) expandedParents.delete(taskId)
+      else expandedParents.add(taskId)
 
-      applyParentState(parentRow)
+      refreshCollapseControls()
     })
     taskCell.prepend(toggle)
   }
 
-  const collapsed = collapsedParents.has(taskId)
-  const icon = collapsed ? '▶' : '▼'
+  const expanded = sectionExpanded && expandedParents.has(taskId)
+  const icon = expanded ? '▼' : '▶'
   if (toggle.textContent !== icon) toggle.textContent = icon
-  toggle.setAttribute('aria-expanded', String(!collapsed))
-  toggle.setAttribute('aria-label', `${taskId} の子タスクを${collapsed ? '展開' : '折りたたみ'}`)
-  toggle.title = collapsed ? '子タスクを展開' : '子タスクを折りたたむ'
+  toggle.setAttribute('aria-expanded', String(expanded))
+  toggle.setAttribute('aria-label', `${taskId} の子タスクを${expanded ? '折りたたみ' : '展開'}`)
+  toggle.title = expanded ? '子タスクを折りたたむ' : '子タスクを展開'
 
-  parentRow.classList.toggle('wbs-parent-collapsed', collapsed)
+  parentRow.classList.toggle('wbs-parent-expanded', expanded)
   children.forEach((row) => {
-    row.hidden = collapsed
+    row.style.display = expanded ? 'table-row' : 'none'
   })
-}
-
-function sectionIdFor(panel: HTMLElement) {
-  return panel.querySelector<HTMLElement>('.section-heading .eyebrow')?.textContent?.trim() || ''
 }
 
 function applySectionState(panel: HTMLElement) {
@@ -84,11 +92,6 @@ function applySectionState(panel: HTMLElement) {
   const progressArea = panel.querySelector<HTMLElement>('.section-heading .section-progress')
   const tableWrap = panel.querySelector<HTMLElement>('.table-wrap')
   if (!sectionId || !progressArea || !tableWrap) return
-
-  if (!initializedSections.has(sectionId)) {
-    initializedSections.add(sectionId)
-    collapsedSections.add(sectionId)
-  }
 
   let toggle = progressArea.querySelector<HTMLButtonElement>(':scope > .wbs-section-collapse-toggle')
   if (!toggle) {
@@ -99,30 +102,35 @@ function applySectionState(panel: HTMLElement) {
       event.preventDefault()
       event.stopPropagation()
 
-      if (collapsedSections.has(sectionId)) collapsedSections.delete(sectionId)
-      else collapsedSections.add(sectionId)
+      if (expandedSections.has(sectionId)) {
+        expandedSections.delete(sectionId)
+        collapseParentsIn(panel)
+      } else {
+        expandedSections.add(sectionId)
+      }
 
-      applySectionState(panel)
+      refreshCollapseControls()
     })
     progressArea.append(toggle)
   }
 
-  const collapsed = collapsedSections.has(sectionId)
-  const label = collapsed ? '▶ タスク表示' : '▼ タスクを隠す'
+  const expanded = expandedSections.has(sectionId)
+  const label = expanded ? '▼ タスクを隠す' : '▶ タスク表示'
   if (toggle.textContent !== label) toggle.textContent = label
-  toggle.setAttribute('aria-expanded', String(!collapsed))
-  toggle.setAttribute('aria-label', `${sectionId} のタスクを${collapsed ? '展開' : '折りたたみ'}`)
-  toggle.title = collapsed ? 'このフェーズのタスクを表示' : 'このフェーズのタスクを隠す'
+  toggle.setAttribute('aria-expanded', String(expanded))
+  toggle.setAttribute('aria-label', `${sectionId} のタスクを${expanded ? '折りたたみ' : '展開'}`)
+  toggle.title = expanded ? 'このフェーズのタスクを隠す' : 'このフェーズのタスクを表示'
 
-  panel.classList.toggle('wbs-section-collapsed', collapsed)
-  tableWrap.hidden = collapsed
+  panel.classList.toggle('wbs-section-expanded', expanded)
+  tableWrap.removeAttribute('hidden')
+  tableWrap.style.display = expanded ? '' : 'none'
+
+  parentRowsFor(panel).forEach((row) => applyParentState(row, expanded))
 }
 
 function resetForWbsOpen() {
-  collapsedParents.clear()
-  initializedParents.clear()
-  collapsedSections.clear()
-  initializedSections.clear()
+  expandedSections.clear()
+  expandedParents.clear()
 }
 
 function refreshCollapseControls() {
@@ -140,8 +148,6 @@ function refreshCollapseControls() {
   }
 
   panels.forEach((panel) => applySectionState(panel))
-  document.querySelectorAll<HTMLTableRowElement>('.wbs-table tbody > tr.parent-row')
-    .forEach((row) => applyParentState(row))
 }
 
 function scheduleRefresh() {
@@ -206,16 +212,7 @@ onBeforeUnmount(() => {
   vertical-align: middle;
 }
 
-.section-panel.wbs-section-collapsed .table-wrap,
-.section-panel.wbs-section-collapsed .table-wrap[hidden] {
-  display: none !important;
-}
-
-.wbs-table .parent-row.wbs-parent-collapsed td {
+.wbs-table .parent-row:not(.wbs-parent-expanded) td {
   background: #fbfdfe;
-}
-
-.wbs-table .child-row[hidden] {
-  display: none !important;
 }
 </style>
