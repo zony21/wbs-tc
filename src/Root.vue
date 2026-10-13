@@ -12,6 +12,7 @@ import DailyReportCopyTool from './DailyReportCopyTool.vue'
 import RegistrationFeedbackTool from './RegistrationFeedbackTool.vue'
 import ViewportLayoutGuard from './ViewportLayoutGuard.vue'
 import WbsTaskCollapseTool from './WbsTaskCollapseTool.vue'
+import DailyTaskCompletionFilter from './DailyTaskCompletionFilter.vue'
 </script>
 
 <template>
@@ -28,4 +29,5 @@ import WbsTaskCollapseTool from './WbsTaskCollapseTool.vue'
   <RegistrationFeedbackTool />
   <ViewportLayoutGuard />
   <WbsTaskCollapseTool />
+  <DailyTaskCompletionFilter />
 </template>
