@@ -85,7 +85,7 @@ function showSuccess(candidate: SuccessState) {
   if (candidate.mode === 'toast') {
     toastTimer = window.setTimeout(() => {
       if (success.value === candidate) success.value = null
-    }, 3200)
+    }, 3000)
   }
 }
 
