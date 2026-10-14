@@ -183,6 +183,16 @@ function waitForNewTask(beforeIds: Set<string>, details: string, attempt = 0) {
   window.setTimeout(() => waitForNewTask(beforeIds, details, attempt + 1), 40)
 }
 
+function waitForEditedTask(modal: HTMLFormElement, taskId: string, details: string, attempt = 0) {
+  if (modal.querySelector('.error-message')?.textContent?.trim()) return
+  if (!document.body.contains(modal)) {
+    saveDetails(taskId, details)
+    return
+  }
+  if (attempt >= 15) return
+  window.setTimeout(() => waitForEditedTask(modal, taskId, details, attempt + 1), 40)
+}
+
 function handleClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
   const button = target?.closest<HTMLButtonElement>('button')
@@ -199,7 +209,7 @@ function handleClick(event: MouseEvent) {
 
   if (kind === 'edit') {
     const taskId = taskIdFromModal(modal)
-    window.setTimeout(() => saveDetails(taskId, details), 80)
+    window.setTimeout(() => waitForEditedTask(modal, taskId, details), 0)
     window.setTimeout(reconcileDetails, 500)
     return
   }
