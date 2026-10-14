@@ -25,6 +25,7 @@ interface WbsTask {
   parentId: string | null
   name: string
   category: string
+  details: string
   startDate: string
   dueDate: string
   progress: number
@@ -90,6 +91,7 @@ db.exec(`
     parent_id TEXT,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
     start_date TEXT NOT NULL,
     due_date TEXT NOT NULL,
     progress INTEGER NOT NULL DEFAULT 0 CHECK(progress BETWEEN 0 AND 100),
@@ -132,6 +134,12 @@ if (!sectionColumns.some((column) => column.name === 'project_id')) {
   db.exec('ALTER TABLE sections ADD COLUMN project_id TEXT;')
 }
 
+// Existing databases created before task details did not have details.
+const taskColumns = db.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>
+if (!taskColumns.some((column) => column.name === 'details')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN details TEXT NOT NULL DEFAULT '';")
+}
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sections_project ON sections(project_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_section ON tasks(section_id);
@@ -170,7 +178,7 @@ const seedState: AppState = {
 
 const insertProject = db.prepare('INSERT INTO projects (id, name, start_date, due_date) VALUES (?, ?, ?, ?)')
 const insertSection = db.prepare('INSERT INTO sections (id, project_id, name, start_date, due_date) VALUES (?, ?, ?, ?, ?)')
-const insertTask = db.prepare('INSERT INTO tasks (id, section_id, parent_id, name, category, start_date, due_date, progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+const insertTask = db.prepare('INSERT INTO tasks (id, section_id, parent_id, name, category, details, start_date, due_date, progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
 const insertAssignee = db.prepare('INSERT INTO task_assignees (task_id, position, assignee) VALUES (?, ?, ?)')
 const insertReport = db.prepare('INSERT INTO daily_reports (id, date, work_type, start_time, end_time, break_hours, overtime_hours, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
 const insertEntry = db.prepare('INSERT INTO daily_entries (row_id, report_id, task_id, hours) VALUES (?, ?, ?, ?)')
@@ -196,7 +204,7 @@ function normalizeState(input: Partial<AppState>): AppState {
   return {
     projects,
     sections: sections.map((section) => ({ ...section, projectId: section.projectId || fallbackProjectId })),
-    tasks,
+    tasks: tasks.map((task) => ({ ...task, details: task.details || '' })),
     reports,
   }
 }
@@ -216,7 +224,7 @@ const replaceState = db.transaction((rawState: AppState) => {
   const parentTasks = state.tasks.filter((task) => task.parentId === null)
   const childTasks = state.tasks.filter((task) => task.parentId !== null)
   for (const task of [...parentTasks, ...childTasks]) {
-    insertTask.run(task.id, task.sectionId, task.parentId, task.name, task.category, task.startDate, task.dueDate, Math.max(0, Math.min(100, Math.round(task.progress))))
+    insertTask.run(task.id, task.sectionId, task.parentId, task.name, task.category, task.details || '', task.startDate, task.dueDate, Math.max(0, Math.min(100, Math.round(task.progress))))
     task.assignees.forEach((assignee, index) => insertAssignee.run(task.id, index, assignee))
   }
 
@@ -231,7 +239,7 @@ const replaceState = db.transaction((rawState: AppState) => {
 function readState(): AppState {
   const projectRows = db.prepare('SELECT id, name, start_date, due_date FROM projects ORDER BY id').all() as Array<{ id: string; name: string; start_date: string; due_date: string }>
   const sectionRows = db.prepare('SELECT id, project_id, name, start_date, due_date FROM sections ORDER BY id').all() as Array<{ id: string; project_id: string | null; name: string; start_date: string; due_date: string }>
-  const taskRows = db.prepare('SELECT id, section_id, parent_id, name, category, start_date, due_date, progress FROM tasks ORDER BY start_date, id').all() as Array<{ id: string; section_id: string; parent_id: string | null; name: string; category: string; start_date: string; due_date: string; progress: number }>
+  const taskRows = db.prepare('SELECT id, section_id, parent_id, name, category, details, start_date, due_date, progress FROM tasks ORDER BY start_date, id').all() as Array<{ id: string; section_id: string; parent_id: string | null; name: string; category: string; details: string; start_date: string; due_date: string; progress: number }>
   const assignees = db.prepare('SELECT task_id, assignee FROM task_assignees ORDER BY task_id, position').all() as Array<{ task_id: string; assignee: string }>
   const reportRows = db.prepare('SELECT id, date, work_type, start_time, end_time, break_hours, overtime_hours, remarks FROM daily_reports ORDER BY date DESC').all() as Array<{ id: string; date: string; work_type: DailyReport['workType']; start_time: string; end_time: string; break_hours: number; overtime_hours: number; remarks: string }>
   const entryRows = db.prepare('SELECT row_id, report_id, task_id, hours FROM daily_entries ORDER BY row_id').all() as Array<{ row_id: string; report_id: string; task_id: string; hours: number }>
@@ -246,6 +254,7 @@ function readState(): AppState {
       parentId: row.parent_id,
       name: row.name,
       category: row.category,
+      details: row.details || '',
       startDate: row.start_date,
       dueDate: row.due_date,
       progress: row.progress,
